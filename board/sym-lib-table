@@ -1,0 +1,7 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "MCU_RaspberryPi_and_Boards")(type "KiCad")(uri "${KIPRJMOD}/MCU_RaspberryPi_and_Boards.kicad_sym")(options "")(descr ""))
+  (lib (name "microsd_spi_cd")(type "Legacy")(uri "${KIPRJMOD}/microsd_spi_cd.lib")(options "")(descr ""))
+  (lib (name "mini-din_6pins_ver4")(type "Legacy")(uri "${KIPRJMOD}/mini-din_6pins_ver4.lib")(options "")(descr ""))
+  (lib (name "rcajack")(type "Legacy")(uri "${KIPRJMOD}/rcajack.lib")(options "")(descr ""))
+)
