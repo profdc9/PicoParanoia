@@ -1,6 +1,7 @@
 # PicoParanoia — Porting Plan (STM32 ParanoiaBox → RP2040 Pico)
 
-Status: **planning, no code yet.**
+Status: **bring-up step 1 complete** (copy-to-RAM skeleton + vendored crypto
+subset building; AES-256-GCM/BLAKE2s self-test ready to flash). Steps 2+ pending.
 
 Porting the ParanoiaBox encryption terminal (`~/projects/ParanoiaBox/code`,
 STM32F103CBT6 / stm32duino) to the Raspberry Pi Pico (RP2040), built on the
@@ -382,12 +383,13 @@ the implementation · **New** = no STM32 counterpart.
 
 ### 2.1 Build / bring-up order (bottom-up, de-risk video early)
 
-1. **Skeleton + crypto (copy-to-RAM from the start):** SDK project building with
-   `copy_to_ram` binary type (§1.8); vendor the FatFs R0.16 + Crypto-lib subset
-   (§2.3); compile the Crypto lib and `cryptotool`; self-test AES-GCM/BLAKE2s
-   over the debug console (`uart0` by default; USB-CDC only if a dev opts in).
-   Confirm via the map file that the image runs from SRAM and check RAM headroom
-   early. (No custom HW.)
+1. **Skeleton + crypto (copy-to-RAM from the start):** ✅ **DONE.** SDK project
+   builds with `copy_to_ram` (verified: `.text` VMA in SRAM); vendored Crypto
+   subset in `third_party/crypto` (GCM/AES256/CTR/BLAKE2s + deps, Curve25519
+   deferred to step 5); `src/main.cpp` self-tests AES-256-GCM + BLAKE2s against
+   known-answer vectors over `uart0` (USB off). RAM: ~47 KB used, ~217 KB free.
+   *Remaining:* run on hardware to see the PASS/FAIL print; vendor FatFs R0.16
+   into `third_party/fatfs` (not needed until step 6).
 2. **Video out (highest risk):** NTSC text-cell driver on GPIO16/17. Get a
    character grid on a TV. Prototype this early — it gates the UI.
 3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while

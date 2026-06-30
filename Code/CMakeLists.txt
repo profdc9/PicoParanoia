@@ -18,16 +18,24 @@ project(picoparanoia C CXX ASM)
 # Initialise the SDK.
 pico_sdk_init()
 
+# Vendored crypto subset (PORTING.md §2.3).
+add_subdirectory(third_party/crypto)
+
 add_executable(picoparanoia
-    main.c
+    src/main.cpp
 )
 
-# pico_stdlib gives you GPIO, timers, UART/USB stdio, etc.
-target_link_libraries(picoparanoia pico_stdlib)
+target_link_libraries(picoparanoia
+    pico_stdlib
+    crypto_subset
+)
 
-# Route printf() to USB serial (set the UART one to 1 instead if preferred).
-pico_enable_stdio_usb(picoparanoia 1)
-pico_enable_stdio_uart(picoparanoia 0)
+# Run the whole image from SRAM — flash-bus hardening (PORTING.md §1.8).
+pico_set_binary_type(picoparanoia copy_to_ram)
+
+# Debug console on uart0 by default; USB left inert and off (PORTING.md §1.7).
+pico_enable_stdio_uart(picoparanoia 1)
+pico_enable_stdio_usb(picoparanoia 0)
 
 # Generate .uf2, .hex, .bin, .map, etc.
 pico_add_extra_outputs(picoparanoia)
