@@ -400,7 +400,11 @@ the implementation · **New** = no STM32 counterpart.
      old `raster88_font`. Single-byte cell model kept (glyph `cell&0x7F`, bit7 =
      reverse); global runtime-toggleable font choice. Font is a 1px-vs-2px stem
      readability tradeoff vs the ~3–5 MHz TV luma bandwidth.
-   - *First-light test pattern implemented (awaiting TV check):* sysclk 126 MHz,
+   - *First light CONFIRMED on hardware (2026-06-30):* stable, fully locked
+     raster — 19 vertical bars visible (≈20 minus overscan), perfectly
+     stationary. Validates the whole video chain (PIO 2-bit sync+luma,
+     self-reloading DMA, 240p timing, resistor DAC). Engine details: sysclk
+     126 MHz,
      12.6 MHz sample clock, 800 samples/line = 15750 Hz, 262 lines = 60.1 Hz.
      One PIO SM emits 2 bits/sample (sync+luma) fed by a self-reloading DMA loop
      over a precomputed frame (eq/serration/blank/active templates) — static,
