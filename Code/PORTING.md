@@ -387,7 +387,9 @@ the implementation · **New** = no STM32 counterpart.
    builds with `copy_to_ram` (verified: `.text` VMA in SRAM); vendored Crypto
    subset in `third_party/crypto` (GCM/AES256/CTR/BLAKE2s + deps, Curve25519
    deferred to step 5); `src/main.cpp` self-tests AES-256-GCM + BLAKE2s against
-   known-answer vectors over `uart0` (USB off). RAM: ~47 KB used, ~217 KB free.
+   known-answer vectors. Console is **USB-CDC for now** (temporary bring-up
+   convenience — the §1.7 default of uart0 + USB-off is restored before USB-host
+   support lands, which is itself deferred). RAM: ~70 KB used, ~194 KB free.
    *Remaining:* run on hardware to see the PASS/FAIL print; vendor FatFs R0.16
    into `third_party/fatfs` (not needed until step 6).
 2. **Video out (highest risk):** NTSC text-cell driver on GPIO16/17. Get a

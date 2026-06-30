@@ -33,9 +33,12 @@ target_link_libraries(picoparanoia
 # Run the whole image from SRAM — flash-bus hardening (PORTING.md §1.8).
 pico_set_binary_type(picoparanoia copy_to_ram)
 
-# Debug console on uart0 by default; USB left inert and off (PORTING.md §1.7).
-pico_enable_stdio_uart(picoparanoia 1)
-pico_enable_stdio_usb(picoparanoia 0)
+# Debug console.
+# TEMPORARY bring-up choice: USB-CDC stdio (no UART adapter needed). The §1.7
+# default is uart0 + USB off/inert; restore that before USB-host support lands.
+# Native USB stays in device mode here, which is fine while host mode is deferred.
+pico_enable_stdio_usb(picoparanoia 1)
+pico_enable_stdio_uart(picoparanoia 0)
 
 # Generate .uf2, .hex, .bin, .map, etc.
 pico_add_extra_outputs(picoparanoia)
