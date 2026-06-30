@@ -29,14 +29,12 @@
 #define BACKPORCH    57
 #define ACTIVE_START (HSYNC + BACKPORCH)    // 116
 #define ACTIVE       640                   // 80*8 px
-#define HALF         (LINE_SAMPLES / 2)
-#define EQ_PULSE     29
-#define SERRATION    59
-#define VBROAD_LOW   (HALF - SERRATION)
+#define SERRATION    59                    // 4.7us: keeps one H-sync edge/line during vsync
 
 // --- vertical structure ---
 #define V_LINES      262
-#define ACTIVE_LINE0 20                    // first active text scanline
+#define V_SYNC_LINES 3                     // progressive (240p) vertical sync, no equalizing
+#define ACTIVE_LINE0 31                    // centers the 200-line active window in 262
 #define CELL_H       8
 #define CURSOR_BLINK_MS 300
 
@@ -66,32 +64,29 @@ static inline void luma_xor(uint32_t *l, int i) {
     l[w] ^= (1u << b);
 }
 
+// Normal line: HSYNC tip, then blanking (sync released, luma black).
 static void build_blank(uint32_t *l) {
     for (int i = 0; i < LINE_SAMPLES; i++) put(l, i, 1, 0);
     for (int i = 0; i < HSYNC; i++)        put(l, i, 0, 0);
 }
-static void build_eq(uint32_t *l) {
-    for (int i = 0; i < LINE_SAMPLES; i++) put(l, i, 1, 0);
-    for (int i = 0; i < EQ_PULSE; i++) { put(l, i, 0, 0); put(l, HALF + i, 0, 0); }
-}
+// Progressive (240p) vertical sync line: sync low almost the whole line, with a
+// single serration at the end so the falling edge at the next line start stays
+// the one-per-line horizontal reference. No interlace equalizing/half-line pulses.
 static void build_vsync(uint32_t *l) {
-    for (int i = 0; i < LINE_SAMPLES; i++) put(l, i, 1, 0);
-    for (int i = 0; i < VBROAD_LOW; i++) { put(l, i, 0, 0); put(l, HALF + i, 0, 0); }
+    for (int i = 0; i < LINE_SAMPLES; i++)
+        put(l, i, (i < LINE_SAMPLES - SERRATION) ? 0 : 1, 0);
 }
 
 static void build_frame(void) {
-    uint32_t blank[LINE_WORDS], eq[LINE_WORDS], vsync[LINE_WORDS];
+    uint32_t blank[LINE_WORDS], vsync[LINE_WORDS];
     build_blank(blank);
-    build_eq(eq);
     build_vsync(vsync);
 
     int y = 0;
     #define EMIT(tpl, n) do { for (int k = 0; k < (n); k++) { \
         memcpy(&frame[y * LINE_WORDS], (tpl), sizeof(blank)); y++; } } while (0)
-    EMIT(eq, 3);                 // pre-equalizing
-    EMIT(vsync, 3);              // vertical sync
-    EMIT(eq, 3);                 // post-equalizing
-    EMIT(blank, V_LINES - y);    // everything else blank (active rows live here)
+    EMIT(vsync, V_SYNC_LINES);   // vertical sync (lines 0..2)
+    EMIT(blank, V_LINES - y);    // blanking; active rows are blitted in at ACTIVE_LINE0
     #undef EMIT
 }
 
