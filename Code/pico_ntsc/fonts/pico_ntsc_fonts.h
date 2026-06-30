@@ -5,10 +5,18 @@
 #define PICO_NTSC_FONTS_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Regular weight: heavier strokes, best at 80 columns where TV luma bandwidth
 // attenuates 1px detail.
 extern const uint8_t pico_ntsc_font_unscii8[128][8];
 // Thin weight: crisper at 40 columns / higher-bandwidth displays.
 extern const uint8_t pico_ntsc_font_unscii8_thin[128][8];
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

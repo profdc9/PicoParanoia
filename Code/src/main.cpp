@@ -9,6 +9,8 @@
 #include <string.h>
 #include "pico/stdlib.h"
 
+#include "pico_ntsc.h"
+
 #include <BLAKE2s.h>
 #include <GCM.h>
 #include <AES.h>
@@ -103,9 +105,14 @@ static void test_aes256_gcm(void) {
 }
 
 int main(void) {
+    // Start composite video first — it sets the system clock to 126 MHz, which
+    // the NTSC line timing depends on (must precede stdio init).
+    bool video_ok = pico_ntsc_init_test_pattern();
+
     stdio_init_all();
 
     for (;;) {
+        printf("\nvideo test pattern: %s\n", video_ok ? "running (GPIO16/17)" : "FAILED");
         g_pass = 0;
         g_fail = 0;
         printf("\n=== PicoParanoia crypto self-test (bring-up step 1) ===\n");

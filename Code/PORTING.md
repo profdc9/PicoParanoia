@@ -400,9 +400,15 @@ the implementation · **New** = no STM32 counterpart.
      old `raster88_font`. Single-byte cell model kept (glyph `cell&0x7F`, bit7 =
      reverse); global runtime-toggleable font choice. Font is a 1px-vs-2px stem
      readability tradeoff vs the ~3–5 MHz TV luma bandwidth.
-   - *Next:* NTSC 240p timing tables + the two lockstep PIO programs (sync/luma)
-     + ping-pong DMA on core1 → first-light test pattern, then framebuffer +
-     glyph blitter → character grid (80-col then 40-col).
+   - *First-light test pattern implemented (awaiting TV check):* sysclk 126 MHz,
+     12.6 MHz sample clock, 800 samples/line = 15750 Hz, 262 lines = 60.1 Hz.
+     One PIO SM emits 2 bits/sample (sync+luma) fed by a self-reloading DMA loop
+     over a precomputed frame (eq/serration/blank/active templates) — static,
+     no CPU/core1. Pattern: 16px vertical bars + white border. `pico_ntsc.c`,
+     `ntsc.pio`. *(Single-SM 2-bit approach for robust first-light; may move to
+     the 2-SM model from §1.5 for the text path once sync lock is confirmed.)*
+   - *Next:* framebuffer + glyph blitter → character grid (80-col then 40-col),
+     font toggle.
 3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while
    native USB stays in device/CDC mode) → completes the `consoleio` API →
    `editor.c` runs. Defer **USB-host** keyboard to step 9.

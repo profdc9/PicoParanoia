@@ -1,0 +1,16 @@
+; pico_ntsc — composite scanout PIO program.
+;
+; One state machine emits 2 bits per sample to two consecutive pins:
+;   bit0 -> GPIO16 (composite SYNC, active-low: 0 = sync tip)
+;   bit1 -> GPIO17 (LUMA: 1 = white, 0 = black)
+; combined externally through the 560R/240R resistor DAC (PORTING.md §1.5).
+;
+; Autopull (threshold 32, shift right) refills the OSR, so each PIO cycle shifts
+; out one 2-bit sample with no instruction overhead. At clkdiv 10 from a 126 MHz
+; system clock the sample rate is 12.6 MHz.
+
+.program ntsc
+
+.wrap_target
+    out pins, 2
+.wrap
