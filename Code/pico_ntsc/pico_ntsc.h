@@ -1,19 +1,24 @@
 // pico_ntsc — standalone, reusable RP2040 composite-video TEXT library.
 //
-// Monochrome NTSC/PAL text-cell display via PIO + DMA (PORTING.md §1.5).
-// Deliberately decoupled from PicoParanoia: it knows only about a character
-// cell buffer, a font, and timing — no application dependencies (§0.B).
+// Monochrome NTSC 240p text-cell display via PIO + DMA (PORTING.md §1.5).
+// Decoupled from the application (§0.B): it knows only about character cells,
+// a font, and a cursor.
 //
-// Cell model (single byte per cell): glyph index = cell & 0x7F; bit 7 = reverse
-// video. Font selection is global and runtime-toggleable for readability.
-//
-// STATUS: step-2 bring-up. Font tables are available; the scanout engine
-// currently exposes a static test pattern for first-light (sync-lock) testing.
-// Framebuffer + glyph blitter API lands in the next increment.
+// Design (as built):
+//  - Single PIO SM emits 2 bits/sample (GPIO16 sync, GPIO17 luma); a
+//    self-reloading DMA loop streams a precomputed frame -> autonomous scanout,
+//    no per-line CPU, core1 unused.
+//  - Glyphs are blitted into the frame's active region on text change (core0).
+//  - Cell model: glyph index = cell & 0x7F; bit 7 = reverse video.
+//  - Cursor (position, visibility, blink) is owned here and rendered by XOR-ing
+//    the cursor cell from a repeating hardware timer.
+//  - 25 rows; 80 or 40 columns (40-col = double-width pixels). Global,
+//    switchable font for readability.
 #ifndef PICO_NTSC_H
 #define PICO_NTSC_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include "fonts/pico_ntsc_fonts.h"
 
 #ifdef __cplusplus
@@ -22,12 +27,31 @@ extern "C" {
 
 // System clock the line timing requires; the engine sets this itself.
 #define PICO_NTSC_SYS_CLOCK_KHZ 126000
+#define PICO_NTSC_ROWS 25
 
-// First-light: drive a static NTSC 240p test pattern (vertical bars + border)
-// on GPIO16 (sync) / GPIO17 (luma). Sets the system clock to 126 MHz and runs
-// autonomously via PIO + a self-reloading DMA loop. Returns false if the clock
-// could not be set. Call before stdio_init_all().
-bool pico_ntsc_init_test_pattern(void);
+typedef enum {
+    PICO_NTSC_MODE_80 = 0,   // 80 columns (8px cells)
+    PICO_NTSC_MODE_40 = 1,   // 40 columns (double-width 16px cells)
+} pico_ntsc_mode_t;
+
+// Bring up composite video in the given mode: sets the system clock to 126 MHz,
+// starts the autonomous PIO+DMA scanout (blank screen) and the cursor-blink
+// timer. Default font is unscii-8 (regular). Call before stdio_init_all().
+// Returns false if the system clock could not be set.
+bool pico_ntsc_init(pico_ntsc_mode_t mode);
+
+int  pico_ntsc_cols(void);                          // 80 or 40
+void pico_ntsc_set_mode(pico_ntsc_mode_t mode);     // clears + applies
+void pico_ntsc_set_font(const uint8_t font[128][8]);// clears not implied; redraw to apply
+void pico_ntsc_clear(void);
+
+// Draw one cell. `cell` low 7 bits = glyph index; bit 7 = reverse video.
+void pico_ntsc_put_cell(int row, int col, uint8_t cell);
+// Convenience: draw a NUL-terminated string from (row,col), clipped to the row.
+void pico_ntsc_put_text(int row, int col, const char *s, bool reverse);
+
+// Cursor (rendered as a blinking reverse-video block by the library).
+void pico_ntsc_set_cursor(int row, int col, bool visible);
 
 #ifdef __cplusplus
 }

@@ -254,8 +254,15 @@ to avoid tearing, or render to the back framebuffer and swap. Zero-copy upgrade
 if ever needed: a per-line pointer table (ring framebuffer) so a scroll rotates
 pointers instead of moving pixels.
 
-**Core split.** Run the video engine (SMs + DMA IRQs) on **core1**; app / UI /
-USB / SD / crypto on **core0**, to isolate sync timing from system jitter.
+**Core split.** *(Updated after first light — superseded for the chosen
+single-SM path.)* With the single-SM + precomputed static-frame design, scanout
+is pure DMA + PIO with **no per-scanline CPU**, so there is **no video engine
+loop and core1 is unused**. Glyph blitting happens on **core0** at text-change
+time (blit-on-write), not per line. **core1 is free** — most likely future
+tenant is the TinyUSB **host** service loop (deferred, off by default); it can
+also absorb an offloaded task if core0 ever gets busy. The original "video on
+core1" note applied to the two-SM/per-line-composition model, which we did not
+take.
 
 Remaining choices are implementation-level only: exact sysclk/divider, the
 scroll-tearing mitigation (vblank memmove vs double-buffer), and the 40-col
@@ -373,7 +380,7 @@ the implementation · **New** = no STM32 counterpart.
 | `random.*` | **Rewrite** | Single muxed RP2040 ADC sampling ch0/ch1 in sequence → **direct BLAKE2s extraction** (§1.3.2), streamed incrementally (no raw buffer). Apply §1.3.1: conservative per-sample credit, **very generous oversampling**, block-until-satisfied, stuck-source health check. Drops the Crypto-lib ChaCha `RNG`/DRBG in favor of the stateless extractor. |
 | `SimpleTransistorNoiseSource.*` | **Drop** | No longer needed — the `NoiseSource` abstraction existed only to feed the Crypto-lib DRBG. Direct BLAKE2s extraction (§1.3.2) folds ADC capture + debias + credit directly into `random.*`. |
 | `flashstruct.*` | **Rewrite** | STM32 flash controller → `hardware/flash.h` (`flash_range_erase`/`program`, 4 KB sectors). Dedicated key region at top of flash, outside the copied image (§1.4/§1.8). |
-| `TNTSChar` / `TNTSCAnsi` | **New** | **Standalone `pico_ntsc` library** (§0.B, §2.2): PIO+DMA engine per §1.5 — 2 lockstep SMs (sync+luma), ping-pong DMA, sync templates, 1bpp framebuffer + glyph blitter, 40/80-col, runs on core1. Zero app coupling. `TNTSCAnsi`'s ANSI/cursor logic moves up into `consoleio`, not the library; reuse font data if usable. |
+| `TNTSChar` / `TNTSCAnsi` | **New** | **Standalone `pico_ntsc` library** (§0.B, §2.2). *As built:* single PIO SM (2 bits/sample sync+luma) + self-reloading DMA over a precomputed static frame — autonomous scanout, no per-line CPU, **core1 unused**; blitter writes glyphs into the frame on core0 at text-change time. 40/80-col, font toggle. Zero app coupling. `TNTSCAnsi`'s ANSI/cursor logic moves up into `consoleio`; reuse font data if usable. |
 | `PS2Keyboard` | **New** | RP2040 PS/2 driver (PIO or IRQ bit-bang) on GPIO4/5, pushing into the shared key event queue. |
 | — | **New (opt-in)** | **USB-host HID keyboard** driver (TinyUSB host) feeding the same key event queue. Compiled in **only** when `PICOPARANOIA_ENABLE_USB_HOST` is set (default **off**, §1.7); otherwise no USB code links and the keyboard is PS/2-only. |
 | — | **New** | **Logging shim** (§1.7): build-time backend switch `uart0` (default) ↔ USB-CDC (`PICOPARANOIA_ENABLE_USB_STDIO`, default off) ↔ none. |
@@ -411,8 +418,14 @@ the implementation · **New** = no STM32 counterpart.
      no CPU/core1. Pattern: 16px vertical bars + white border. `pico_ntsc.c`,
      `ntsc.pio`. *(Single-SM 2-bit approach for robust first-light; may move to
      the 2-SM model from §1.5 for the text path once sync lock is confirmed.)*
-   - *Next:* framebuffer + glyph blitter → character grid (80-col then 40-col),
-     font toggle.
+   - *Text path implemented (awaiting TV check):* glyph blitter writes into the
+     active frame region (blit-on-write, core0); public API `pico_ntsc_init`/
+     `put_cell`/`put_text`/`clear`/`set_mode`/`set_font`/`set_cursor`. Cursor
+     owned by the library, XOR-rendered from a repeating timer. 80- and 40-col
+     (40 = double-width). Demo cycles both fonts × both modes every 5 s for the
+     readability comparison.
+   - *Next:* `consoleio` shim (cursor advance, scroll via framebuffer memmove,
+     ANSI/VT100) on top of this API → then `editor.c` runs.
 3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while
    native USB stays in device/CDC mode) → completes the `consoleio` API →
    `editor.c` runs. Defer **USB-host** keyboard to step 9.
