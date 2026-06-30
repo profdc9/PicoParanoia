@@ -394,6 +394,15 @@ the implementation · **New** = no STM32 counterpart.
    into `third_party/fatfs` (not needed until step 6).
 2. **Video out (highest risk):** NTSC text-cell driver on GPIO16/17. Get a
    character grid on a TV. Prototype this early — it gates the UI.
+   - *In progress:* `pico_ntsc/` library scaffolded (standalone, §0.B); two
+     public-domain readability-tuned font tables built — `unscii8` (regular,
+     for 80-col) and `unscii8_thin` (40-col), with 0x00–0x1F spliced from the
+     old `raster88_font`. Single-byte cell model kept (glyph `cell&0x7F`, bit7 =
+     reverse); global runtime-toggleable font choice. Font is a 1px-vs-2px stem
+     readability tradeoff vs the ~3–5 MHz TV luma bandwidth.
+   - *Next:* NTSC 240p timing tables + the two lockstep PIO programs (sync/luma)
+     + ping-pong DMA on core1 → first-light test pattern, then framebuffer +
+     glyph blitter → character grid (80-col then 40-col).
 3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while
    native USB stays in device/CDC mode) → completes the `consoleio` API →
    `editor.c` runs. Defer **USB-host** keyboard to step 9.
