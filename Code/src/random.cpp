@@ -22,7 +22,9 @@
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include <BLAKE2s.h>
+#include <ff.h>
 #include "consoleio.h"
+#include "fileop.h"
 #include "random.h"
 
 // --- hardware map -----------------------------------------------------------
@@ -54,6 +56,37 @@
 // Bounded retries before we declare the source dead and refuse to continue.
 #define RNG_STUCK_RETRIES 8
 
+// NIST SP 800-90B continuous health tests, run per channel on the raw low-byte
+// stream. Cutoffs are for a false-positive rate alpha = 2^-20 and an assumed
+// per-sample min-entropy of H = 2 bits (see the exact-cutoff table below). H=2
+// is a deliberately conservative default: a healthy source spreading over ~120
+// low-byte values has an expected APT count near 5, far under the 177 cutoff, so
+// false alarms are negligible, yet the tests still catch a stuck value (RCT) and
+// a two-value collapse (count ~256 > 177) that the range check alone misses.
+// Tighten H toward the measured min-entropy once the offline SP 800-90B estimate
+// is available (use the "Capture entropy to file" option to collect the samples).
+//
+//     H    RCT cutoff   APT cutoff   (W=512, alpha=2^-20)
+//     1        21          310
+//     2        11          177   <- current default
+//     3         8          103
+//     4         6           62
+#ifndef RNG_RCT_CUTOFF
+#define RNG_RCT_CUTOFF 11        // same low byte this many times in a row -> fail
+#endif
+#ifndef RNG_APT_WINDOW
+#define RNG_APT_WINDOW 512       // non-binary APT window
+#endif
+#ifndef RNG_APT_CUTOFF
+#define RNG_APT_CUTOFF 177       // most-common value >= this in a window -> fail
+#endif
+
+// Bytes captured per channel by "Capture entropy to file". SP 800-90B's
+// estimators want >= 1,000,000 samples, so 1 MiB per channel clears the bar.
+#ifndef RNG_CAPTURE_BYTES
+#define RNG_CAPTURE_BYTES (1024u * 1024u)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,6 +115,64 @@ static void rng_panic(const char *why)
   }
 }
 
+// Per-channel state for the SP 800-90B continuous health tests.
+typedef struct
+{
+  int16_t  rct_last;    // last sample value (-1 = none seen yet)
+  uint16_t rct_run;     // current repetition run length
+  uint8_t  apt_ref;     // reference value for the current APT window
+  uint16_t apt_count;   // occurrences of apt_ref so far in the window
+  uint16_t apt_pos;     // samples seen in the current window (0 = start)
+} rng_health;
+
+// Continuous state for the two channels, advanced by the whitened extractor so
+// that APT windows accumulate across successive calls.
+static rng_health health[2];
+
+static void rng_health_reset(rng_health *hs)
+{
+  hs->rct_last  = -1;
+  hs->rct_run   = 0;
+  hs->apt_ref   = 0;
+  hs->apt_count = 0;
+  hs->apt_pos   = 0;
+}
+
+// Feed one raw low byte for a channel. Returns 0 (ok), 1 (RCT failed) or
+// 2 (APT failed). Both tests run on every sample.
+static int rng_health_update(rng_health *hs, uint8_t sample)
+{
+  // Repetition Count Test (SP 800-90B 4.4.1): flag a value repeating too often.
+  if ((int16_t)sample == hs->rct_last)
+  {
+    if (++hs->rct_run >= RNG_RCT_CUTOFF) return 1;
+  }
+  else
+  {
+    hs->rct_last = (int16_t)sample;
+    hs->rct_run  = 1;
+  }
+
+  // Adaptive Proportion Test (SP 800-90B 4.4.2): non-overlapping windows of
+  // RNG_APT_WINDOW samples; flag if the window's first value recurs too often.
+  if (hs->apt_pos == 0)
+  {
+    hs->apt_ref   = sample;
+    hs->apt_count = 1;
+    hs->apt_pos   = 1;
+  }
+  else
+  {
+    if (sample == hs->apt_ref) hs->apt_count++;
+    if (++hs->apt_pos >= RNG_APT_WINDOW)
+    {
+      hs->apt_pos = 0;                          // start a fresh window next call
+      if (hs->apt_count >= RNG_APT_CUTOFF) return 2;
+    }
+  }
+  return 0;
+}
+
 // Raw low bytes of successive conversions, alternating channels. For display and
 // health testing only — NOT whitened, do not use directly as key material.
 void randomness_get_raw_random_bits(uint8_t randomdata[], int bytes)
@@ -95,19 +186,24 @@ void randomness_get_raw_random_bits(uint8_t randomdata[], int bytes)
   }
 }
 
-// Sample a channel many times and confirm it actually moves. Returns 1 if both
-// channels look live, 0 if either is flat/stuck. Exposed so the UI can surface
-// a bad circuit before the user trusts the device with a key.
+// On-demand battery: for each channel run a full APT window through RCT + APT
+// plus the peak-to-peak range check. Returns 1 if both channels pass, 0 if any
+// test flags. Uses local test state so it doesn't perturb the continuous health
+// windows advanced by the extractor. Surfaced in the UI so a bad circuit is
+// caught before the user trusts the device with a key.
 int random_circuit_check(void)
 {
   for (int ch = 0; ch < 2; ch++)
   {
+    rng_health hc;
+    rng_health_reset(&hc);
     uint16_t mn = 0xFFFF, mx = 0;
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < RNG_APT_WINDOW; i++)
     {
       uint16_t s = adc_sample(ch);
       if (s < mn) mn = s;
       if (s > mx) mx = s;
+      if (rng_health_update(&hc, (uint8_t)s)) return 0;
     }
     if ((int)(mx - mn) < RNG_MIN_SPREAD) return 0;
   }
@@ -119,6 +215,8 @@ void random_initialize(void)
   adc_init();
   adc_gpio_init(NOISE_GPIO0);
   adc_gpio_init(NOISE_GPIO1);
+  rng_health_reset(&health[0]);
+  rng_health_reset(&health[1]);
   // Discard the first few conversions after enabling the analog pins.
   for (int i = 0; i < 16; i++) (void)adc_sample(i & 1);
 }
@@ -161,11 +259,19 @@ void randomness_get_whitened_bits(uint8_t whitenedbytes[], size_t bytes)
       int ch = 0;
       for (uint32_t i = 0; i < RNG_RAW_PER_BLOCK; i++)
       {
-        uint16_t s = adc_sample(ch);
+        int cur = ch;
+        uint16_t s = adc_sample(cur);
         ch ^= 1;
         if (s < mn) mn = s;
         if (s > mx) mx = s;
         uint8_t lb = (uint8_t)s;
+        // Continuous SP 800-90B health testing on the raw stream. A trip is
+        // definitive (alpha = 2^-20), so we halt rather than retry.
+        switch (rng_health_update(&health[cur], lb))
+        {
+          case 1: rng_panic("Repetition Count Test failed (value stuck)"); break;
+          case 2: rng_panic("Adaptive Proportion Test failed (biased source)"); break;
+        }
         h.update(&lb, 1);
       }
 
@@ -280,6 +386,74 @@ void randomness_show(void)
     int ch = console_inchar();
     if (ch == ' ') break;
   }
+}
+
+// Stream RNG_CAPTURE_BYTES raw low bytes from a single channel (no alternation,
+// no whitening, no health gating — one source per file is what SP 800-90B wants)
+// to an SD file. Returns 1 on success.
+static int capture_channel(int ch, const char *path)
+{
+  FIL f;
+  if (f_open(&f, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK)
+  {
+    file_report_error("Could not create capture file");
+    return 0;
+  }
+  uint8_t buf[512];
+  FSIZE_t written = 0;
+  while (written < RNG_CAPTURE_BYTES)
+  {
+    for (size_t i = 0; i < sizeof(buf); i++)
+      buf[i] = (uint8_t)adc_sample(ch);
+    UINT bw;
+    if (f_write(&f, buf, sizeof(buf), &bw) != FR_OK || bw != sizeof(buf))
+    {
+      f_close(&f);
+      file_report_error("Write error during capture");
+      return 0;
+    }
+    written += bw;
+    if ((written & (64u * 1024u - 1u)) == 0)
+    {
+      console_gotoxy(1, 6);
+      console_puts("  ");
+      console_printuint((unsigned)written);
+      console_puts(" / ");
+      console_printuint((unsigned)RNG_CAPTURE_BYTES);
+      console_puts(" bytes ");
+    }
+  }
+  f_close(&f);
+  return 1;
+}
+
+// Capture both channels to <base>.CH0 and <base>.CH1 for offline min-entropy
+// estimation. Lets the SP 800-90B assessment drive the RNG_* cutoffs above.
+void randomness_capture_to_file(void)
+{
+  char base[256];
+  if (!file_select_card("Select directory for entropy capture", base, sizeof(base) - 1, 1)) return;
+  if (!file_enter_filename("Base filename (.CH0/.CH1 appended):", base, sizeof(base) - 1)) return;
+
+  char p0[256], p1[256];
+  strcpy_n(p0, base, sizeof(p0) - 1); strcat_n(p0, ".CH0", sizeof(p0) - 1);
+  strcpy_n(p1, base, sizeof(p1) - 1); strcat_n(p1, ".CH1", sizeof(p1) - 1);
+
+  console_clrscr();
+  console_puts("Capturing raw low bytes (SP 800-90B input)\r\n");
+  console_gotoxy(1, 4);
+  console_puts("Channel 0 (GPIO26):");
+  if (!capture_channel(0, p0)) return;
+  console_gotoxy(1, 4);
+  console_puts("Channel 1 (GPIO27):");
+  if (!capture_channel(1, p1)) return;
+
+  console_clrscr();
+  console_puts("Capture complete:\r\n  ");
+  console_puts(p0); console_printcrlf(); console_puts("  ");
+  console_puts(p1); console_printcrlf();
+  console_puts("\r\nAnalyze per channel on a host, e.g.:\r\n  ea_non_iid -a <file>\r\n");
+  console_press_space();
 }
 
 #ifdef __cplusplus

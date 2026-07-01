@@ -68,8 +68,9 @@ V - View File\r\n\
 X - Delete File\r\n\
 R - Randomness Test\r\n\
 Z - Show Raw Noise\r\n\
+C - Capture Entropy to File\r\n\
 \r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXRZ";
+static const char mainmenuoptions[] = "MTNVXRZC";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -121,6 +122,7 @@ int main(void) {
             case 'X': file_delete();        break;
             case 'R': randomness_test();    break;
             case 'Z': randomness_show();    break;
+            case 'C': randomness_capture_to_file(); break;
         }
     }
 }
