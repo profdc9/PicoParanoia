@@ -26,7 +26,12 @@ add_subdirectory(pico_ntsc)
 
 add_executable(picoparanoia
     src/main.cpp
+    src/consoleio.cpp
+    src/TNTSCAnsi.cpp
+    src/ps2_kbd.c
 )
+
+target_include_directories(picoparanoia PRIVATE src)
 
 target_link_libraries(picoparanoia
     pico_stdlib

@@ -434,11 +434,18 @@ the implementation · **New** = no STM32 counterpart.
      Because 1144 isn't ÷16, the framebuffer is indexed by absolute sample (the
      frame total *is* word-aligned). Frame buffer ~73 KB. Vertical sync = 3
      progressive sync-low lines (`build_vsync`), the STM32 scheme.
-   - *Next:* `consoleio` shim (cursor advance, scroll via framebuffer memmove,
-     ANSI/VT100) on top of this API → then `editor.c` runs.
-3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while
-   native USB stays in device/CDC mode) → completes the `consoleio` API →
-   `editor.c` runs. Defer **USB-host** keyboard to step 9.
+   - *Console DONE — confirmed on hardware (2026-06-30):* the old **TNTSCAnsi**
+     VT100 emulator is reused verbatim as a standalone text-buffer emulator, with
+     a single optional per-cell **hook macro** (`VS_PUT` → `TNTSCANSI_CELL_CHANGED`,
+     no-op by default; PicoParanoia's `tntscansi_hook.h` maps it to
+     `pico_ntsc_put_cell`). So VS_PUT updates the char buffer *and* blits the one
+     changed cell — no diff/re-render. `consoleio` ported nearly verbatim on top;
+     input from PS/2 with a USB-serial fallback. `src/{consoleio,TNTSCAnsi,ps2_kbd}`.
+3. **Keyboard in — DONE (2026-06-30):** `ps2_kbd` ports the PS/2 state machine to
+   an RP2040 falling-edge GPIO IRQ (clock GPIO5, data GPIO4) → ASCII FIFO →
+   `console_getch`. Confirmed on hardware (with a 5V→3.3V shifter). USB-serial
+   input also works for keyboard-less testing. **USB-host** keyboard deferred to
+   step 9.
 4. **RNG:** ADC noise capture on GPIO26/27 → `random` → seeds crypto. Build in
    the §1.3.1 discipline from the start: conservative credit + heavy
    oversampling + stuck-source health check. Sanity-test LSB randomness.
