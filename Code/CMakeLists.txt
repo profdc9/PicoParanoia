@@ -36,6 +36,7 @@ add_executable(picoparanoia
     src/cryptotool.c
     src/editor.c
     src/fileop.cpp
+    src/random.cpp
 )
 
 target_include_directories(picoparanoia PRIVATE src)
@@ -43,6 +44,7 @@ target_include_directories(picoparanoia PRIVATE src)
 target_link_libraries(picoparanoia
     pico_stdlib
     hardware_spi
+    hardware_adc
     crypto_subset
     pico_ntsc
     fatfs

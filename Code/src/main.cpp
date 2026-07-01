@@ -14,6 +14,7 @@
 #include "diskio.h"
 #include "fileop.h"
 #include "editor.h"
+#include "random.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -65,8 +66,10 @@ T - Text Editor\r\n\
 N - New File\r\n\
 V - View File\r\n\
 X - Delete File\r\n\
+R - Randomness Test\r\n\
+Z - Show Raw Noise\r\n\
 \r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVX";
+static const char mainmenuoptions[] = "MTNVXRZ";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -86,6 +89,10 @@ int main(void) {
     console_puts("SD low-level probe:\r\n");
     sd_diag(0, "  ciphertext (spi1)");
     sd_diag(1, "  plaintext  (spi0)");
+    random_initialize();
+    console_puts("Entropy circuit: ");
+    console_puts(random_circuit_check() ? "OK" : "SUSPECT");
+    console_printcrlf();
     console_press_space();
 
     file_mount_volume(0);   // mount both cards (fileop's fs0/fs1)
@@ -112,6 +119,8 @@ int main(void) {
             case 'N': file_new();           break;
             case 'V': file_view();          break;
             case 'X': file_delete();        break;
+            case 'R': randomness_test();    break;
+            case 'Z': randomness_show();    break;
         }
     }
 }
