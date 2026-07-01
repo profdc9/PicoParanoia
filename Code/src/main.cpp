@@ -24,7 +24,7 @@
 
 // ---------------- crypto known-answer self-test ----------------
 
-static void crypto_selftest(void) {
+static void crypto_selftest(int *passed, int *failed) {
     int pass = 0, fail = 0;
     uint8_t out[32];
     static const uint8_t blake_empty[32] = {
@@ -58,6 +58,8 @@ static void crypto_selftest(void) {
       Curve25519::eval(r, s, c25519_u);
       (memcmp(r, c25519_out, 32) == 0 ? pass : fail)++; }
     printf("crypto self-test: %d passed, %d failed\n", pass, fail);
+    if (passed) *passed = pass;
+    if (failed) *failed = fail;
 }
 
 // Low-level SD probe: does the card initialize, does a raw sector read work,
@@ -100,14 +102,20 @@ int main(void) {
 
     stdio_init_all();
     printf("\n=== PicoParanoia console demo ===\n");
-    crypto_selftest();
+    int cpass = 0, cfail = 0;
+    crypto_selftest(&cpass, &cfail);
 
-    // One-shot low-level SD probe at boot (raw init/read/signature).
+    // One-shot boot diagnostics on the TV.
     console_clrscr();
     console_highvideo();
     console_puts("PicoParanoia");
     console_lowvideo();
     console_puts(" bring-up\r\n\r\n");
+    console_puts("Crypto self-test (BLAKE2s/GCM/Curve25519): ");
+    console_printint(cpass);
+    console_puts(" passed, ");
+    console_printint(cfail);
+    console_puts(cfail ? " FAILED\r\n" : " failed\r\n");
     console_puts("SD low-level probe:\r\n");
     sd_diag(0, "  ciphertext (spi1)");
     sd_diag(1, "  plaintext  (spi0)");
