@@ -16,6 +16,7 @@
 #include "editor.h"
 #include "random.h"
 #include "flashstruct.h"
+#include "keymanager.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -92,8 +93,9 @@ R - Randomness Test\r\n\
 Z - Show Raw Noise\r\n\
 C - Capture Entropy to File\r\n\
 F - Flash Store Self-Test\r\n\
+K - Key Manager\r\n\
 \r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXRZCF";
+static const char mainmenuoptions[] = "MTNVXRZCFK";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -125,6 +127,7 @@ int main(void) {
     console_printcrlf();
     console_press_space();
 
+    keymanager_initialize();
     file_mount_volume(0);   // mount both cards (fileop's fs0/fs1)
 
     for (;;) {
@@ -140,6 +143,14 @@ int main(void) {
         console_puts("\r\nPlaintext card ");
         console_highvideo();
         console_puts(fs1_mounted ? "present" : "absent");
+        console_lowvideo();
+        console_puts("\r\nSymmetric/Private key: ");
+        console_highvideo();
+        keymanager_display_key(-1, &current_key_private);
+        console_lowvideo();
+        console_puts("\r\nPublic key: ");
+        console_highvideo();
+        keymanager_display_key(-1, &current_key_public);
         console_lowvideo();
 
         int option = console_selectmenu(mainmenu, mainmenuoptions);
@@ -159,6 +170,7 @@ int main(void) {
                 console_puts(flashstruct_selftest() ? "PASS" : "FAIL");
                 console_press_space();
                 break;
+            case 'K': keymanager();         break;
         }
     }
 }

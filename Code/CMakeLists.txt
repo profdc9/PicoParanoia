@@ -46,6 +46,7 @@ add_executable(picoparanoia
     src/random.cpp
     src/flashstruct.c
     src/arduino_rng_glue.cpp
+    src/keymanager.cpp
 )
 
 target_include_directories(picoparanoia PRIVATE src)
