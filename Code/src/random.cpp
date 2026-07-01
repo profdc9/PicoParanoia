@@ -226,6 +226,21 @@ void randomness_test(void)
       console_puts(": ");
       console_printuint(histogram[n + 16]);
     }
+    // Uniformity check: for a flat distribution the bin counts scatter with
+    // std dev ~sqrt(N/32), so the max-min spread grows like sqrt(N) while the
+    // total count grows like N. Their ratio should therefore climb as sqrt(N)
+    // the longer the test runs — a slowly rising number means uniform; a ratio
+    // that stalls (spread growing like N) means a biased source.
+    unsigned int hmax = 0, hmin = 0xFFFFFFFFu, total = 0;
+    for (int n = 0; n < 32; n++)
+    {
+      unsigned int c = histogram[n];
+      total += c;
+      if (c > hmax) hmax = c;
+      if (c < hmin) hmin = c;
+    }
+    unsigned int spread = hmax - hmin;
+
     unsigned long elapsed = (to_ms_since_boot(get_absolute_time()) - startime) / 1000;
     if (elapsed == 0) elapsed = 1;
     console_gotoxy(1, 20);
@@ -233,7 +248,14 @@ void randomness_test(void)
     console_printuint(bits);
     console_puts(" bit/s ");
     console_printuint(bits / elapsed);
-    console_puts("\r\nPress SPACE to end");
+    console_gotoxy(1, 21);
+    console_puts("Spread (max-min): ");
+    console_printuint(spread);
+    console_gotoxy(1, 22);
+    console_puts("Total/Spread (~sqrt N): ");
+    console_printuint(spread ? total / spread : 0);
+    console_gotoxy(1, 24);
+    console_puts("Press SPACE to end");
   }
 }
 
