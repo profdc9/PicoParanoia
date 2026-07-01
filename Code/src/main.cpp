@@ -12,6 +12,8 @@
 #include "consoleio.h"
 #include "ff.h"
 #include "diskio.h"
+#include "fileop.h"
+#include "editor.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -55,34 +57,16 @@ static void sd_diag(BYTE drv, const char *label) {
     console_printcrlf();
 }
 
-// Mount an SD card and list its root directory onto the console.
-static FATFS fs_ciphertext, fs_plaintext;
-static void sd_list(const char *drive, const char *label, FATFS *fs) {
-    console_puts(label);
-    console_puts(": ");
-    FRESULT fr = f_mount(fs, drive, 1);   // opt 1 = mount now
-    if (fr != FR_OK) {
-        console_puts("mount error ");
-        console_printint(fr);
-        console_printcrlf();
-        return;
-    }
-    console_puts("mounted\r\n");
-    DIR dir;
-    FILINFO fno;
-    if (f_opendir(&dir, drive) != FR_OK) { console_puts("  (opendir failed)\r\n"); return; }
-    int n = 0;
-    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] && n < 16) {
-        console_puts("  ");
-        console_puts(fno.fname);
-        if (fno.fattrib & AM_DIR) console_puts("/");
-        else { console_puts("  "); console_printuint((unsigned)fno.fsize); }
-        console_printcrlf();
-        n++;
-    }
-    if (n == 0) console_puts("  (empty)\r\n");
-    f_closedir(&dir);
-}
+// Main menu — only the operations ported so far (fileop + editor). Key
+// manager, randomness test, and encrypt/decrypt (fileenc) land in later steps.
+static const char mainmenu[] =
+    "\r\n\r\nM - Mount Drives\r\n\
+T - Text Editor\r\n\
+N - New File\r\n\
+V - View File\r\n\
+X - Delete File\r\n\
+\r\n\r\nOption: ";
+static const char mainmenuoptions[] = "MTNVX";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -93,26 +77,41 @@ int main(void) {
     printf("\n=== PicoParanoia console demo ===\n");
     crypto_selftest();
 
+    // One-shot low-level SD probe at boot (raw init/read/signature).
     console_clrscr();
     console_highvideo();
     console_puts("PicoParanoia");
     console_lowvideo();
-    console_puts(" console\r\n");
-    console_puts("consoleio + TNTSCAnsi (VT100) over pico_ntsc\r\n\r\n");
+    console_puts(" bring-up\r\n\r\n");
     console_puts("SD low-level probe:\r\n");
     sd_diag(0, "  ciphertext (spi1)");
     sd_diag(1, "  plaintext  (spi0)");
-    console_puts("SD mount:\r\n");
-    sd_list("0:", "  ciphertext (spi1)", &fs_ciphertext);
-    sd_list("1:", "  plaintext  (spi0)", &fs_plaintext);
-    console_printcrlf();
+    console_press_space();
 
-    console_puts("Type on the PS/2 keyboard or USB serial - it echoes here.\r\n\r\n");
+    file_mount_volume(0);   // mount both cards (fileop's fs0/fs1)
 
     for (;;) {
-        int ch = console_getch();
-        if (ch == '\r') console_puts("\r\n");   // Enter -> CR+LF
-        else            console_putch((char)ch);
-        printf("key: %d\n", ch);                // mirror to USB for debugging
+        console_clrscr();
+        console_highvideo();
+        console_puts("PicoParanoia");
+        console_lowvideo();
+        console_puts(" by D. Marks\r\n");
+        console_puts("Ciphertext card ");
+        console_highvideo();
+        console_puts(fs0_mounted ? "present" : "absent");
+        console_lowvideo();
+        console_puts("\r\nPlaintext card ");
+        console_highvideo();
+        console_puts(fs1_mounted ? "present" : "absent");
+        console_lowvideo();
+
+        int option = console_selectmenu(mainmenu, mainmenuoptions);
+        switch (option) {
+            case 'M': file_mount_volume(0); break;
+            case 'T': file_edit();          break;
+            case 'N': file_new();           break;
+            case 'V': file_view();          break;
+            case 'X': file_delete();        break;
+        }
     }
 }

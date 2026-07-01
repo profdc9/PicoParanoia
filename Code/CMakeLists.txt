@@ -33,6 +33,9 @@ add_executable(picoparanoia
     src/TNTSCAnsi.cpp
     src/ps2_kbd.c
     src/sd_spi.c
+    src/cryptotool.c
+    src/editor.c
+    src/fileop.cpp
 )
 
 target_include_directories(picoparanoia PRIVATE src)
