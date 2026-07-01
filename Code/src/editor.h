@@ -18,7 +18,7 @@ extern void *rf_ptr;
 extern writefile wf;
 extern void *wf_ptr;
 
-#define AMAX  0x1800	/* main buffer size */
+#define AMAX  0x8000	/* main buffer size (RP2040: ~32K files; heap has room) */
 #define BMAX  0x200 	/* block size */
 
 #ifdef __cplusplus

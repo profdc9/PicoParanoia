@@ -15,6 +15,7 @@
 #include "fileop.h"
 #include "editor.h"
 #include "random.h"
+#include "flashstruct.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -69,8 +70,9 @@ X - Delete File\r\n\
 R - Randomness Test\r\n\
 Z - Show Raw Noise\r\n\
 C - Capture Entropy to File\r\n\
+F - Flash Store Self-Test\r\n\
 \r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXRZC";
+static const char mainmenuoptions[] = "MTNVXRZCF";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -123,6 +125,13 @@ int main(void) {
             case 'R': randomness_test();    break;
             case 'Z': randomness_show();    break;
             case 'C': randomness_capture_to_file(); break;
+            case 'F':
+                console_clrscr();
+                console_gotoxy(1, 4);
+                console_puts("Flash store self-test: ");
+                console_puts(flashstruct_selftest() ? "PASS" : "FAIL");
+                console_press_space();
+                break;
         }
     }
 }

@@ -37,6 +37,7 @@ add_executable(picoparanoia
     src/editor.c
     src/fileop.cpp
     src/random.cpp
+    src/flashstruct.c
 )
 
 target_include_directories(picoparanoia PRIVATE src)
@@ -45,6 +46,7 @@ target_link_libraries(picoparanoia
     pico_stdlib
     hardware_spi
     hardware_adc
+    hardware_flash
     crypto_subset
     pico_ntsc
     fatfs
