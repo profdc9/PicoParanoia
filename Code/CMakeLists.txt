@@ -24,19 +24,25 @@ add_subdirectory(third_party/crypto)
 # Standalone composite-video text library (PORTING.md §0.B / §1.5).
 add_subdirectory(pico_ntsc)
 
+# Vendored FatFs R0.16 (PORTING.md §2.3).
+add_subdirectory(third_party/fatfs)
+
 add_executable(picoparanoia
     src/main.cpp
     src/consoleio.cpp
     src/TNTSCAnsi.cpp
     src/ps2_kbd.c
+    src/sd_spi.c
 )
 
 target_include_directories(picoparanoia PRIVATE src)
 
 target_link_libraries(picoparanoia
     pico_stdlib
+    hardware_spi
     crypto_subset
     pico_ntsc
+    fatfs
 )
 
 # Run the whole image from SRAM — flash-bus hardening (PORTING.md §1.8).

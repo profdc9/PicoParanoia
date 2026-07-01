@@ -10,6 +10,8 @@
 #include "pico/stdlib.h"
 
 #include "consoleio.h"
+#include "ff.h"
+#include "diskio.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -35,6 +37,53 @@ static void crypto_selftest(void) {
     printf("crypto self-test: %d passed, %d failed\n", pass, fail);
 }
 
+// Low-level SD probe: does the card initialize, does a raw sector read work,
+// and is the boot signature (0x55 0xAA at offset 510/511) intact?
+static void sd_diag(BYTE drv, const char *label) {
+    console_puts(label);
+    DSTATUS st = disk_initialize(drv);
+    console_puts(" init="); console_printint(st);
+    if (st & STA_NOINIT) { console_puts(" NOINIT\r\n"); return; }
+    static BYTE buf[512];
+    DRESULT r = disk_read(drv, buf, 0, 1);
+    console_puts(" read="); console_printint(r);
+    if (r == RES_OK) {
+        console_puts(" sig=");
+        console_printuint(buf[510]); console_putch(','); console_printuint(buf[511]);
+        console_puts(buf[510] == 0x55 && buf[511] == 0xAA ? " OK" : " BAD");
+    }
+    console_printcrlf();
+}
+
+// Mount an SD card and list its root directory onto the console.
+static FATFS fs_ciphertext, fs_plaintext;
+static void sd_list(const char *drive, const char *label, FATFS *fs) {
+    console_puts(label);
+    console_puts(": ");
+    FRESULT fr = f_mount(fs, drive, 1);   // opt 1 = mount now
+    if (fr != FR_OK) {
+        console_puts("mount error ");
+        console_printint(fr);
+        console_printcrlf();
+        return;
+    }
+    console_puts("mounted\r\n");
+    DIR dir;
+    FILINFO fno;
+    if (f_opendir(&dir, drive) != FR_OK) { console_puts("  (opendir failed)\r\n"); return; }
+    int n = 0;
+    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] && n < 16) {
+        console_puts("  ");
+        console_puts(fno.fname);
+        if (fno.fattrib & AM_DIR) console_puts("/");
+        else { console_puts("  "); console_printuint((unsigned)fno.fsize); }
+        console_printcrlf();
+        n++;
+    }
+    if (n == 0) console_puts("  (empty)\r\n");
+    f_closedir(&dir);
+}
+
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
     // do it before stdio_init_all().
@@ -50,8 +99,15 @@ int main(void) {
     console_lowvideo();
     console_puts(" console\r\n");
     console_puts("consoleio + TNTSCAnsi (VT100) over pico_ntsc\r\n\r\n");
-    console_puts("Type on the PS/2 keyboard or USB serial - it echoes here.\r\n");
-    console_puts("Arrow keys move the cursor; Enter = new line.\r\n\r\n");
+    console_puts("SD low-level probe:\r\n");
+    sd_diag(0, "  ciphertext (spi1)");
+    sd_diag(1, "  plaintext  (spi0)");
+    console_puts("SD mount:\r\n");
+    sd_list("0:", "  ciphertext (spi1)", &fs_ciphertext);
+    sd_list("1:", "  plaintext  (spi0)", &fs_plaintext);
+    console_printcrlf();
+
+    console_puts("Type on the PS/2 keyboard or USB serial - it echoes here.\r\n\r\n");
 
     for (;;) {
         int ch = console_getch();
