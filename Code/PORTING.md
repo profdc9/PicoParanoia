@@ -418,12 +418,22 @@ the implementation · **New** = no STM32 counterpart.
      no CPU/core1. Pattern: 16px vertical bars + white border. `pico_ntsc.c`,
      `ntsc.pio`. *(Single-SM 2-bit approach for robust first-light; may move to
      the 2-SM model from §1.5 for the text path once sync lock is confirmed.)*
-   - *Text path implemented (awaiting TV check):* glyph blitter writes into the
-     active frame region (blit-on-write, core0); public API `pico_ntsc_init`/
-     `put_cell`/`put_text`/`clear`/`set_mode`/`set_font`/`set_cursor`. Cursor
-     owned by the library, XOR-rendered from a repeating timer. 80- and 40-col
-     (40 = double-width). Demo cycles both fonts × both modes every 5 s for the
-     readability comparison.
+   - *Text path DONE — confirmed rock-steady on hardware (2026-06-30):* glyph
+     blitter writes into the active frame (blit-on-write, core0); public API
+     `pico_ntsc_init`/`put_cell`/`put_text`/`clear`/`set_mode`/`set_font`/
+     `set_cursor`. Cursor owned by the library, XOR-rendered from a repeating
+     timer. 80- and 40-col (40 = double-width). Per-mode default font: unscii-8
+     regular @ 80, unscii-8 thin @ 40.
+   - *Horizontal timing corrected to match the STM32 generator (this fixed the
+     overscan):* the first-light 12.6 MHz pixel clock made the active 80% of the
+     line (overscanned off the edges) and crowded the sync. Now **sysclk 126 MHz,
+     clkdiv 7 → sample clock exactly 18 MHz**; **1144 samples/line = 4.5 MHz/286 =
+     15734.27 Hz (exact NTSC)**, 262 lines = 60.05 Hz. Active is a **narrow ~35.6
+     µs (56% of line, 640 px)** with a **fat ~9.8 µs back porch**, sitting inside
+     overscan. PAL is the same clock with 1152 samples/line → exactly 15625 Hz.
+     Because 1144 isn't ÷16, the framebuffer is indexed by absolute sample (the
+     frame total *is* word-aligned). Frame buffer ~73 KB. Vertical sync = 3
+     progressive sync-low lines (`build_vsync`), the STM32 scheme.
    - *Next:* `consoleio` shim (cursor advance, scroll via framebuffer memmove,
      ANSI/VT100) on top of this API → then `editor.c` runs.
 3. **Keyboard in:** start with the **PS/2** driver on GPIO4/5 (works while

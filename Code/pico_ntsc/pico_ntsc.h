@@ -41,8 +41,11 @@ typedef enum {
 bool pico_ntsc_init(pico_ntsc_mode_t mode);
 
 int  pico_ntsc_cols(void);                          // 80 or 40
-void pico_ntsc_set_mode(pico_ntsc_mode_t mode);     // clears + applies
-void pico_ntsc_set_font(const uint8_t font[128][8]);// clears not implied; redraw to apply
+// Set mode; clears the screen and selects the readability default font for that
+// mode (80-col = unscii-8 regular, 40-col = unscii-8 thin).
+void pico_ntsc_set_mode(pico_ntsc_mode_t mode);
+// Override the font (call after set_mode); redraw to apply.
+void pico_ntsc_set_font(const uint8_t font[128][8]);
 void pico_ntsc_clear(void);
 
 // Draw one cell. `cell` low 7 bits = glyph index; bit 7 = reverse video.
