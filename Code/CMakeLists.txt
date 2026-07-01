@@ -15,6 +15,13 @@ include(pico_sdk_import.cmake)
 
 project(picoparanoia C CXX ASM)
 
+# The whole image runs from SRAM (copy-to-RAM, §1.8), so code size is RAM.
+# Optimize for size by DEFAULT; speed-critical code opts back up to -O2 per
+# target (e.g. crypto_subset for AES/GCM/BLAKE2s throughput). Overrides the
+# Release build type's -O3.
+set(CMAKE_C_FLAGS_RELEASE   "-Os -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-Os -DNDEBUG")
+
 # Initialise the SDK.
 pico_sdk_init()
 
@@ -33,11 +40,12 @@ add_executable(picoparanoia
     src/TNTSCAnsi.cpp
     src/ps2_kbd.c
     src/sd_spi.c
-    src/cryptotool.c
+    src/cryptotool.cpp
     src/editor.c
     src/fileop.cpp
     src/random.cpp
     src/flashstruct.c
+    src/arduino_rng_glue.cpp
 )
 
 target_include_directories(picoparanoia PRIVATE src)

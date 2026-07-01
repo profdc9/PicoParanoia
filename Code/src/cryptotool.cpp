@@ -1,15 +1,24 @@
-// cryptotool — base64 text-armor codec.
+// cryptotool — base64 text-armor codec + small crypto helpers.
 //
-// Ported verbatim from ParanoiaBox cryptotool.cpp (the base64 section). The
-// codec is stream-oriented: a read callback yields plaintext/base64 bytes and
-// a write callback receives the encoded/decoded bytes, so it composes with
-// fileop's block reader/writer without buffering a whole file. Pure C, no
-// crypto dependency — the crypto helpers from cryptotool.cpp are ported later
-// with fileenc.
+// Ported from ParanoiaBox cryptotool.cpp. The base64 codec is stream-oriented
+// (read/write callbacks) so it composes with fileop's block reader/writer. The
+// crypto helpers wrap the vendored primitives (BLAKE2s, AES-256-GCM). Two
+// original helpers are intentionally omitted (see cryptotool.h): the unused
+// ctblake2srehash and the sbrk-based heap_stack_distance.
 
+#include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <BLAKE2s.h>
+#include <AES.h>
+#include <GCM.h>
 #include "cryptotool.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// ---------------- base64 ----------------
 
 static const char encoding_table[] = {
             'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
@@ -20,7 +29,6 @@ static const char encoding_table[] = {
             'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
             'w', 'x', 'y', 'z', '0', '1', '2', '3',
             '4', '5', '6', '7', '8', '9', '+', '/' };
-
 
 static const uint8_t decoding_table[256] = {
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -109,3 +117,78 @@ int base64_decode(base64_readdata rd, void *vrd, base64_writedata wd, void *vwd)
     } while (len>3);
     return 1;
 }
+
+// ---------------- crypto helpers ----------------
+
+int ctblake2s(void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen)
+{
+    BLAKE2s blake2s;
+    if (keylen > 0)
+        blake2s.reset(key, keylen, outlen);
+    else
+        blake2s.reset(outlen);
+    blake2s.update(in, inlen);
+    blake2s.finalize(out, outlen);
+    return 0;
+}
+
+/* PBKDF2-style stretch to a 32-byte key */
+int key_derivation_function(void *hash, void *passphrase, size_t passphrase_len, void *salt, size_t salt_len)
+{
+    BLAKE2s blake2s;
+    const uint8_t b[4] = { 0, 0, 0, 1 };
+    uint8_t current_hash[KEYMANAGER_HASHLEN];
+
+    blake2s.reset((uint8_t *)salt, salt_len, KEYMANAGER_HASHLEN);
+    blake2s.update(b, sizeof(b));
+    blake2s.update((uint8_t *)passphrase, passphrase_len);
+    blake2s.finalize(hash, KEYMANAGER_HASHLEN);
+    memcpy((void *)current_hash, (void *)hash, KEYMANAGER_HASHLEN);
+
+    for (uint32_t n = 1; n < KEY_DERIVATION_HASHES; n++)
+    {
+        blake2s.reset((uint8_t *)current_hash, KEYMANAGER_HASHLEN);
+        blake2s.update((uint8_t *)passphrase, passphrase_len);
+        blake2s.finalize(current_hash, KEYMANAGER_HASHLEN);
+        for (int i = 0; i < KEYMANAGER_HASHLEN; i++) ((uint8_t *)hash)[i] ^= current_hash[i];
+    }
+    return 0;
+}
+
+int aes256_gcm_memcrypt(bool encrypt, void *aes_key, void *aes_iv, void *tag, void *buffer, size_t inlen)
+{
+    GCM<AES256> cipher;
+    cipher.setKey((const uint8_t *)aes_key, cipher.keySize());
+    cipher.setIV((const uint8_t *)aes_iv, cipher.ivSize());
+    if (encrypt)
+    {
+        cipher.encrypt((uint8_t *)buffer, (uint8_t *)buffer, inlen);
+        cipher.computeTag((uint8_t *)tag, AES_GCM_TAG_LENGTH);
+        return 1;
+    }
+    cipher.decrypt((uint8_t *)buffer, (uint8_t *)buffer, inlen);
+    return cipher.checkTag(tag, AES_GCM_TAG_LENGTH);
+}
+
+#define poly 0x1021
+
+uint32_t calc_crc16(uint8_t *addr, uint32_t num)
+{
+    int i;
+    uint32_t crc = 0;
+    for (; num > 0; num--)
+    {
+        crc = crc ^ (((uint32_t)*addr++) << 8);
+        for (i = 0; i < 8; i++)
+        {
+            crc = crc << 1;
+            if (crc & 0x10000)
+                crc = (crc ^ poly) & 0xFFFF;
+        }
+    }
+    return (crc);
+}
+
+#ifdef __cplusplus
+}
+#endif

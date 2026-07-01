@@ -13,7 +13,7 @@ computing base small. The rest of the arduinolibs repo and the unused Crypto
 modules (SHA-2/3, ChaCha/Poly1305, EAX/OMAC/XTS, Ed25519, P521, HKDF, the
 ESP32 AES path, examples, …) are deliberately excluded.
 
-## Files in this directory (step-1 set)
+## Files in this directory
 
 AEAD / cipher path used by `cryptotool` (AES-256-GCM, AES-CTR):
 `AES.h`, `AESCommon.cpp`, `AES256.cpp`, `BlockCipher.[ch]`, `Cipher.[ch]`,
@@ -21,14 +21,37 @@ AEAD / cipher path used by `cryptotool` (AES-256-GCM, AES-CTR):
 plus the core `Crypto.[ch]`, `Hash.[ch]`, hash `BLAKE2s.[ch]`, and
 `utility/{EndianUtil,LimbUtil,ProgMemUtil,RotateUtil}.h`.
 
-## Deliberately NOT included yet
+ECDH25519 (keymanager): `Curve25519.[ch]`, `BigNumberUtil.[ch]`, and `RNG.h`.
 
-- **`Curve25519` + `BigNumberUtil`** (ECDH25519) are added at bring-up **step 5**
-  (keymanager), together with a small patch to drop `Curve25519.cpp`'s
-  `#include "RNG.h"` / `dh1()`/`dh2()` — we generate the private scalar with our
-  own BLAKE2s entropy extractor (PORTING.md §1.3.2) and call `eval()` directly.
-- **`RNGClass` / `ChaCha` / `NoiseSource`** — excluded entirely (the only
-  Arduino-coupled code; replaced by direct BLAKE2s extraction, §1.3.2).
+## ECDH25519 without vendoring the Arduino RNG
+
+`Curve25519.cpp` `#include`s `"RNG.h"`, and its `dh1()` calls `RNG.rand()` to
+generate the private scalar. We do **not** want the Arduino RNG (ChaCha CSPRNG +
+`NoiseSource`); PicoParanoia derives entropy by direct BLAKE2s extraction from
+the ADC noise sources (PORTING.md §1.3.2). Rather than *edit* the library — which
+would break its audit provenance — we leave every file byte-for-byte identical to
+upstream and arrange for `dh1()` to be unused:
+
+- `RNG.h` is vendored **verbatim**. It is self-contained (only `<inttypes.h>`,
+  `<stddef.h>`, a forward-declared `class NoiseSource`, and pure declarations),
+  so it lets `Curve25519.cpp` compile.
+- `RNG.cpp` is **not** compiled, so `RNGClass` / the `RNG` global are never
+  defined or linked.
+- keymanager never calls `dh1()`. It generates + clamps the private scalar with
+  the platform extractor and calls `Curve25519::eval()` directly for keygen, and
+  `Curve25519::dh2()` (which does not use `RNG`) for the shared secret.
+- With `-ffunction-sections` + `--gc-sections` (Pico SDK defaults) the unused
+  `dh1()` section is garbage-collected, so its `RNG.rand()` reference disappears
+  and nothing pulls in `RNGClass`. The build fails to link if `dh1()` ever
+  becomes reachable — a useful tripwire. The Curve25519 KAT in `main.cpp`
+  references `eval()`, forcing the library into the link so this is exercised.
+
+## Deliberately excluded
+
+- **`RNG.cpp` / `ChaCha` / `NoiseSource.*`** — the Arduino-coupled RNG stack
+  (only `RNG.h` is present, for compilation as described above).
+- Unused Crypto modules (SHA-2/3, ChaCha/Poly1305, EAX/OMAC/XTS, Ed25519, P521,
+  HKDF, the ESP32 AES path, examples, …).
 
 `CRYPTO_AES_ESP32` is never defined, so `AES256` uses the software `AESCommon`
 implementation (not `AESEsp32.cpp`, which is not vendored).
