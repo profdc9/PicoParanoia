@@ -37,12 +37,12 @@ extern "C" {
 typedef enum
 {
   KEY_TYPE_EMPTY = 0,
-  KEY_TYPE_AES = 1,
+  KEY_TYPE_SYMMETRIC = 1,
   KEY_TYPE_ECDH_PRIVATE = 2,
   KEY_TYPE_ECDH_PUBLIC = 3
 } key_type;
 
-#define PAD_UP_TO_AES_BLOCKLEN(x) ((((x)+AES_BLOCKLEN-1)/AES_BLOCKLEN)*AES_BLOCKLEN)
+#define PAD_UP_TO_SYMMETRIC_BLOCKLEN(x) ((((x)+SYMMETRIC_BLOCKLEN-1)/SYMMETRIC_BLOCKLEN)*SYMMETRIC_BLOCKLEN)
 
 #define KEY_EXPORT_ID 0xAA11
 #define KEY_EXPORT_VERSION 0x1000
@@ -90,14 +90,14 @@ typedef struct _key_entry
 typedef union _key_entry_union
 {
 	key_entry kes[KEY_NUMBER];
-	uint8_t   filler[PAD_UP_TO_AES_BLOCKLEN(sizeof(key_entry)*KEY_NUMBER)];        /* 64 bytes = 4 AES blocks */
+	uint8_t   filler[PAD_UP_TO_SYMMETRIC_BLOCKLEN(sizeof(key_entry)*KEY_NUMBER)];    /* 64 bytes = 4 blocks */
 } key_entry_union;
 
 typedef struct _key_storage
 {
 	uint8_t          salt[KEYMANAGER_KEYBYTES];
-  uint8_t          key_entry_iv[AES_BLOCKLEN];
-  uint8_t          key_entry_tag[AES_BLOCKLEN];
+  uint8_t          key_entry_iv[SYMMETRIC_IVLEN];
+  uint8_t          key_entry_tag[SYMMETRIC_TAGLEN];
 	key_entry_union  keu;
 } key_storage;
 

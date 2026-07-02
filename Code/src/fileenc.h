@@ -44,7 +44,7 @@ typedef struct _fileenc_header_payload
   uint16_t      totallen;
   uint64_t      file_length;
   uint8_t       salt2[KEYMANAGER_HASHLEN];
-  uint8_t       iv2[AES_BLOCKLEN];
+  uint8_t       iv2[SYMMETRIC_IVLEN];
   char          filename[FILEENC_FILENAME];
 } fileenc_header_payload;
 
@@ -57,8 +57,8 @@ typedef union _fileenc_header_payload_union
 typedef struct _fileenc_total_header
 {
   uint8_t                         salt1[KEYMANAGER_HASHLEN];
-  uint8_t                         iv1[AES_BLOCKLEN];
-  uint8_t                         tag1[AES_BLOCKLEN];
+  uint8_t                         iv1[SYMMETRIC_IVLEN];
+  uint8_t                         tag1[SYMMETRIC_TAGLEN];
   fileenc_header_payload_union    fhpu;
 } fileenc_total_header;
 

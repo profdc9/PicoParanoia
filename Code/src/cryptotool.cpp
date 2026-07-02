@@ -2,9 +2,11 @@
 //
 // Ported from ParanoiaBox cryptotool.cpp. The base64 codec is stream-oriented
 // (read/write callbacks) so it composes with fileop's block reader/writer. The
-// crypto helpers wrap the vendored primitives (BLAKE2s, AES-256-GCM). Two
-// original helpers are intentionally omitted (see cryptotool.h): the unused
-// ctblake2srehash and the sbrk-based heap_stack_distance.
+// crypto helpers wrap the vendored primitives (BLAKE2s, and symmetric_memcrypt's
+// AEAD cipher -- currently AES-256-GCM; see cryptotool.h for why callers never
+// need to know that). Two original helpers are intentionally omitted (see
+// cryptotool.h): the unused ctblake2srehash and the sbrk-based
+// heap_stack_distance.
 
 #include <string.h>
 #include <stdlib.h>
@@ -155,19 +157,24 @@ int key_derivation_function(void *hash, void *passphrase, size_t passphrase_len,
     return 0;
 }
 
-int aes256_gcm_memcrypt(bool encrypt, void *aes_key, void *aes_iv, void *tag, void *buffer, size_t inlen)
+// The one place that names the actual AEAD cipher in use. Everything above
+// this file (keymanager, fileenc) calls symmetric_memcrypt() and only ever
+// sees SYMMETRIC_* sizes -- swapping the cipher (e.g. to ChaCha20-Poly1305,
+// which uses the same 256-bit key / 96-bit IV / 128-bit tag) means changing
+// only this function.
+int symmetric_memcrypt(bool encrypt, void *key, void *iv, void *tag, void *buffer, size_t inlen)
 {
     GCM<AES256> cipher;
-    cipher.setKey((const uint8_t *)aes_key, cipher.keySize());
-    cipher.setIV((const uint8_t *)aes_iv, cipher.ivSize());
+    cipher.setKey((const uint8_t *)key, cipher.keySize());
+    cipher.setIV((const uint8_t *)iv, cipher.ivSize());
     if (encrypt)
     {
         cipher.encrypt((uint8_t *)buffer, (uint8_t *)buffer, inlen);
-        cipher.computeTag((uint8_t *)tag, AES_GCM_TAG_LENGTH);
+        cipher.computeTag((uint8_t *)tag, SYMMETRIC_TAGLEN);
         return 1;
     }
     cipher.decrypt((uint8_t *)buffer, (uint8_t *)buffer, inlen);
-    return cipher.checkTag(tag, AES_GCM_TAG_LENGTH);
+    return cipher.checkTag(tag, SYMMETRIC_TAGLEN);
 }
 
 #define poly 0x1021

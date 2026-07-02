@@ -48,7 +48,7 @@ static key_storage *ks = NULL;
 int keymanager_compute_secret(uint8_t *secret, int *secretlen)
 {
   uint8_t temp_private_key[KEYMANAGER_PUBLICKEY_LEN];
-  if (current_key_private.entry_type == KEY_TYPE_AES)
+  if (current_key_private.entry_type == KEY_TYPE_SYMMETRIC)
   {
     *secretlen = sizeof(current_key_private.ksu.sym.symmetric_key);
     memcpy((void *)secret, (void *)current_key_private.ksu.sym.symmetric_key, sizeof(current_key_private.ksu.sym.symmetric_key));
@@ -126,7 +126,7 @@ void keymanager_recalculate_hashes(void)
 
   randomness_get_whitened_bits(bits, sizeof(bits));
   memcpy((void *)ks->key_entry_iv, (void *)bits, sizeof(ks->key_entry_iv));
-  aes256_gcm_memcrypt(1, (void *)passphrase_hash, (void *)ks->key_entry_iv, (void *)ks->key_entry_tag, (void *)&ks->keu, sizeof(ks->keu));
+  symmetric_memcrypt(1, (void *)passphrase_hash, (void *)ks->key_entry_iv, (void *)ks->key_entry_tag, (void *)&ks->keu, sizeof(ks->keu));
 }
 
 int keymanager_get_passphrase(void)
@@ -139,7 +139,7 @@ int keymanager_get_passphrase(void)
     keymanager_enter_passphrase("Enter passphrase:", passphrase);
     keymanager_key_derivation_function(passphrase, passphrase_hash);
   }
-  if (!aes256_gcm_memcrypt(0, (void *)passphrase_hash, (void *)ks->key_entry_iv, (void *)ks->key_entry_tag, (void *)&ks->keu, sizeof(ks->keu)))
+  if (!symmetric_memcrypt(0, (void *)passphrase_hash, (void *)ks->key_entry_iv, (void *)ks->key_entry_tag, (void *)&ks->keu, sizeof(ks->keu)))
   {
     char destructcode[13];
     console_gotoxy(1, 15);
@@ -155,7 +155,7 @@ int keymanager_get_passphrase(void)
 
 #define KEYMANAGER_SELECT_DISPLAY 16
 
-const char *keymanager_types[] = { "EMPTY", "AES", "PRIVATE", "PUBLIC" };
+const char *keymanager_types[] = { "EMPTY", "SYMM", "PRIVATE", "PUBLIC" };
 
 void keymanager_display_key(int entno, key_entry *ke)
 {
@@ -298,7 +298,7 @@ void keymanager_new_passphrase_key(int entno, key_entry *ke)
   key_derivation_function((void *)keh, (void *)passphrase, strlen_n(passphrase), NULL, 0);
   memcpy((void *)ke->description,(void *)description,sizeof(ke->description));
   memcpy((void *)ke->ksu.sym.symmetric_key, (void *)keh, sizeof(ke->ksu.sym.symmetric_key));
-  ke->entry_type = KEY_TYPE_AES;
+  ke->entry_type = KEY_TYPE_SYMMETRIC;
   keyflash_changed = 1;
 }
 
@@ -347,7 +347,7 @@ void keymanager_select_key(void)
     }
     if (ch == '\r')
     {
-      if ((ke->entry_type == KEY_TYPE_AES) || (ke->entry_type == KEY_TYPE_ECDH_PUBLIC) || (ke->entry_type == KEY_TYPE_ECDH_PRIVATE))
+      if ((ke->entry_type == KEY_TYPE_SYMMETRIC) || (ke->entry_type == KEY_TYPE_ECDH_PUBLIC) || (ke->entry_type == KEY_TYPE_ECDH_PRIVATE))
       {
         if (ke->entry_type == KEY_TYPE_ECDH_PUBLIC)
           current_key_public = *ke;
