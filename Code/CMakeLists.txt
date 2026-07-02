@@ -49,6 +49,7 @@ add_executable(picoparanoia
     src/flashstruct.c
     src/arduino_rng_glue.cpp
     src/keymanager.cpp
+    src/fileenc.cpp
     src/fault.c
 )
 

@@ -17,6 +17,7 @@
 #include "random.h"
 #include "flashstruct.h"
 #include "keymanager.h"
+#include "fileenc.h"
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -79,21 +80,22 @@ static void sd_diag(BYTE drv, const char *label) {
     console_printcrlf();
 }
 
-// Main menu — only the operations ported so far (fileop + editor). Key
-// manager, randomness test, and encrypt/decrypt (fileenc) land in later steps.
+// Main menu.
 static const char mainmenu[] =
     "\r\n\r\nM - Mount Drives\r\n\
 T - Text Editor\r\n\
 N - New File\r\n\
 V - View File\r\n\
 X - Delete File\r\n\
+E - Encrypt File\r\n\
+D - Decrypt File\r\n\
 R - Randomness Test\r\n\
 Z - Show Raw Noise\r\n\
 C - Capture Entropy to File\r\n\
 F - Flash Store Self-Test\r\n\
 K - Key Manager\r\n\
 \r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXRZCFK";
+static const char mainmenuoptions[] = "MTNVXEDRZCFK";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -159,6 +161,8 @@ int main(void) {
             case 'N': file_new();           break;
             case 'V': file_view();          break;
             case 'X': file_delete();        break;
+            case 'E': fileenc_encrypt();    break;
+            case 'D': fileenc_decrypt();    break;
             case 'R': randomness_test();    break;
             case 'Z': randomness_show();    break;
             case 'C': randomness_capture_to_file(); break;
