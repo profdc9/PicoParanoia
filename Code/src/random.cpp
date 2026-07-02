@@ -17,6 +17,15 @@
 // on BLAKE2s as the randomness extractor. Getting the entropy accounting wrong
 // here silently weakens every key, so the conservative knobs below are meant to
 // be reviewed against real captured histograms (randomness_test / _show).
+//
+// Defense in depth: every whitened block also folds in pico_ps2kbd's keystroke-
+// timing accumulator (raw, unwhitened, human-typing-jitter based -- see
+// pico_ps2kbd.h). It's blended in unconditionally, not just as a fallback: extra
+// unpredictable material folded through BLAKE2s alongside the (already health-
+// checked) ADC path cannot weaken the output, and it's a real fallback source of
+// unpredictability if the analog noise circuit is ever degraded in a way the
+// health checks don't catch. It contributes nothing (a fixed, known value) until
+// someone has actually typed, which is honestly disclosed, not hidden.
 
 #include <string.h>
 #include "pico/stdlib.h"
@@ -25,6 +34,7 @@
 #include <ff.h>
 #include "consoleio.h"
 #include "fileop.h"
+#include "pico_ps2kbd.h"
 #include "random.h"
 
 // --- hardware map -----------------------------------------------------------
@@ -231,10 +241,11 @@ void random_stir_in_entropy(void)
 }
 
 // The extractor. For each 32-byte output block, hash RNG_RAW_PER_BLOCK raw ADC
-// low-bytes (both channels) plus a per-block sequence number and timestamp for
-// domain separation, then take the 32-byte BLAKE2s digest. A per-block spread
-// check guards against a stuck source; persistent failure panics rather than
-// returning weak bits.
+// low-bytes (both channels), a per-block sequence number and timestamp for
+// domain separation, and the current PS/2 keystroke-timing accumulator (defense
+// in depth, see the file header), then take the 32-byte BLAKE2s digest. A
+// per-block spread check guards against a stuck source; persistent failure
+// panics rather than returning weak bits.
 void randomness_get_whitened_bits(uint8_t whitenedbytes[], size_t bytes)
 {
   static uint32_t block_ctr = 0;
@@ -254,6 +265,11 @@ void randomness_get_whitened_bits(uint8_t whitenedbytes[], size_t bytes)
       uint64_t t = time_us_64();
       h.update(&seq, sizeof(seq));
       h.update(&t, sizeof(t));
+
+      uint32_t kb_acc = pico_ps2kbd_entropy_sample();
+      uint32_t kb_cnt = pico_ps2kbd_entropy_count();
+      h.update(&kb_acc, sizeof(kb_acc));
+      h.update(&kb_cnt, sizeof(kb_cnt));
 
       uint16_t mn = 0xFFFF, mx = 0;
       int ch = 0;

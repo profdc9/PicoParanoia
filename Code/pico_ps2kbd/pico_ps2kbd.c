@@ -5,6 +5,7 @@
 
 #include "pico_ps2kbd.h"
 #include "pico/stdlib.h"
+#include "pico/time.h"
 #include "hardware/gpio.h"
 
 #define CLOCK_PIN 5
@@ -64,6 +65,27 @@ static const struct scancodetable scancodes[] = {
 static volatile unsigned char fifo_buf[FIFOSIZE];
 static volatile int fifo_head, fifo_tail;
 
+// --- keystroke-timing entropy (defense in depth; see pico_ps2kbd.h) ---
+static volatile uint32_t entropy_acc;
+static volatile uint32_t entropy_count;
+
+// Mix a microsecond timestamp into the accumulator. Called once per fully
+// received PS/2 byte (not per clock edge -- the intra-byte edges are timed
+// by the keyboard's own internal oscillator and are fairly regular; the
+// unpredictable signal is the human-driven GAP between separate keystrokes).
+// This is deliberately cheap, ISR-safe mixing, not a real extractor: it just
+// accumulates raw jitter for a caller to fold into a proper hash-based
+// whitener (see pico_ps2kbd_entropy_sample() in the header).
+static void entropy_mix(void) {
+    uint32_t t = (uint32_t)time_us_64();
+    uint32_t x = entropy_acc ^ t;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    entropy_acc = x;
+    entropy_count++;
+}
+
 static void fifo_put(int ch) {
     int np = fifo_head + 1;
     if (np >= FIFOSIZE) np = 0;
@@ -98,6 +120,7 @@ static void ps2_irq(uint gpio, uint32_t events) {
         state = (paritybit != (databit != 0)) ? 10 : 0;
     } else if (state == 10) {
         if (databit) {                                   // valid stop bit
+            entropy_mix();   // every completed byte contributes a timing sample
             if (curbyte == KB_KEY_UP) {
                 lastkeyup = 1;
             } else {
@@ -128,9 +151,18 @@ static void ps2_irq(uint gpio, uint32_t events) {
     }
 }
 
+// Non-destructive peek at the accumulator + how many byte-events fed it. Not
+// synchronized with the IRQ: worst case a reader sees entropy_count slightly
+// ahead of/behind the exact acc value it eventually corresponds to, which has
+// no security impact here (there's no correctness property being relied on
+// beyond "at least this many timing samples have been mixed in so far").
+uint32_t pico_ps2kbd_entropy_sample(void) { return entropy_acc; }
+uint32_t pico_ps2kbd_entropy_count(void)  { return entropy_count; }
+
 void pico_ps2kbd_init(void) {
     state = curbyte = paritybit = shiftkey = ctrlkey = lastkeyup = 0;
     fifo_head = fifo_tail = 0;
+    entropy_acc = entropy_count = 0;
 
     gpio_init(CLOCK_PIN);
     gpio_init(DATA_PIN);

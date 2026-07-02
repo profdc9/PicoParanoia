@@ -14,12 +14,33 @@
 #ifndef PICO_PS2KBD_H
 #define PICO_PS2KBD_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void pico_ps2kbd_init(void);    // configure GPIO4/5 and the clock-edge IRQ
 int  pico_ps2kbd_getkey(void);  // next decoded byte, or -1 if the FIFO is empty
+
+// Keystroke-timing entropy (defense in depth).
+//
+// The driver mixes a microsecond timestamp into a running accumulator once
+// per fully received PS/2 byte (every byte, including modifier presses and
+// key-up markers -- not just ones that decode to a visible character), using
+// the gap between separate keystrokes rather than intra-byte clock edges
+// (those are timed by the keyboard's own oscillator and are fairly regular;
+// human typing rhythm is not).
+//
+// This is raw, UNWHITENED material, not a substitute for a real entropy
+// source: it's cheap xorshift-style mixing done inside an ISR, with no
+// health checking and no guarantee of any particular amount of unpredictable
+// bits per event. It exists so a platform RNG has a fallback input to fold
+// into a proper hash-based extractor if its primary source (e.g. analog
+// noise) is unavailable or fails its health checks -- not to be trusted
+// alone, and only available when a human is actively typing.
+uint32_t pico_ps2kbd_entropy_sample(void);  // current accumulator value
+uint32_t pico_ps2kbd_entropy_count(void);   // how many byte-events have contributed
 
 #ifdef __cplusplus
 }
