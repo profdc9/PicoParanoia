@@ -27,7 +27,14 @@ freely, subject to the following restrictions:
 extern "C" {
 #endif  
 
-#define KEY_NUMBER 80
+// 320 (4x the original 80): private keys never leave this device (no export
+// path exists, by design), so the key store must hold every key -- private,
+// public, and symmetric -- a user will ever need on it. Sized against the
+// reserved 64 KB flash region (writeflashstruct's page-streaming rewrite
+// means RAM is no longer the binding constraint -- see flashstruct.c): at
+// 320, key_storage is ~30 KB, using 32 KB of flash (half the 60 KB budget
+// after the self-test's reserved sector) and ~38% of free heap.
+#define KEY_NUMBER 320
 #define KEY_DESCRIPTION_LEN 30
 // RP2040: base of the reserved persistent flash region (top 64 KB of the 2 MB
 // part), XIP-mapped. Sector-aligned as writeflashstruct requires. The program
