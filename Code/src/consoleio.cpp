@@ -6,9 +6,14 @@
 // there is no separate render/diff step. After each write we sync the hardware
 // cursor to the emulator's cursor.
 //
-// Input: the PS/2 keyboard FIFO, falling back to whatever debug console stdio
-// is wired to (uart0 by default; USB-CDC if PICOPARANOIA_ENABLE_USB_STDIO was
-// set at build time) -- handy for testing without a keyboard.
+// Input: the PS/2 keyboard FIFO, then (if PICOPARANOIA_ENABLE_USB_HOST was set
+// at build time) the USB-host keyboard FIFO, falling back to whatever debug
+// console stdio is wired to (uart0 by default; USB-CDC if
+// PICOPARANOIA_ENABLE_USB_STDIO was set -- mutually exclusive with USB host,
+// see PORTING.md §1.7) -- handy for testing without a keyboard. Both keyboard
+// sources can be live at once (separate GPIOs vs. USB, no conflict); this is
+// the "single key event queue" PORTING.md §1.6 calls for, just drained from
+// two FIFOs in priority order rather than merged into one upstream.
 
 #include "consoleio.h"
 
@@ -20,6 +25,9 @@
 #include "pico_ntsc.h"
 #include "TNTSCAnsi.h"
 #include "pico_ps2kbd.h"
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+#include "pico_usbhostkbd.h"
+#endif
 
 #define CON_ROWS 25
 #define CON_COLS 40
@@ -41,6 +49,9 @@ void console_init(void)
     pico_ntsc_init(PICO_NTSC_MODE_40);      // 40-col, unscii-8-thin; sets sysclk 126 MHz
     TNTSCAnsi.begin(vbuf, CON_ROWS, CON_COLS);  // clears screen via the blit hook
     pico_ps2kbd_init();
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+    pico_usbhostkbd_init();
+#endif
     last_cx = last_cy = -1;
     sync_cursor();
 }
@@ -49,6 +60,10 @@ int console_inchar(void)
 {
     int ch = pico_ps2kbd_getkey();
     if (ch >= 0) return ch;
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+    ch = pico_usbhostkbd_getkey();
+    if (ch >= 0) return ch;
+#endif
     int u = getchar_timeout_us(0);          // debug console stdio; <0 when none
     return (u < 0) ? -1 : u;
 }

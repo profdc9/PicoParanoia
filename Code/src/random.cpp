@@ -35,6 +35,9 @@
 #include "consoleio.h"
 #include "fileop.h"
 #include "pico_ps2kbd.h"
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+#include "pico_usbhostkbd.h"
+#endif
 #include "random.h"
 
 // --- hardware map -----------------------------------------------------------
@@ -270,6 +273,12 @@ void randomness_get_whitened_bits(uint8_t whitenedbytes[], size_t bytes)
       uint32_t kb_cnt = pico_ps2kbd_entropy_count();
       h.update(&kb_acc, sizeof(kb_acc));
       h.update(&kb_cnt, sizeof(kb_cnt));
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+      uint32_t ukb_acc = pico_usbhostkbd_entropy_sample();
+      uint32_t ukb_cnt = pico_usbhostkbd_entropy_count();
+      h.update(&ukb_acc, sizeof(ukb_acc));
+      h.update(&ukb_cnt, sizeof(ukb_cnt));
+#endif
 
       uint16_t mn = 0xFFFF, mx = 0;
       int ch = 0;

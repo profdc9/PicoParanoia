@@ -21,6 +21,21 @@ project(picoparanoia C CXX ASM)
 # stdio code links at all.
 option(PICOPARANOIA_ENABLE_USB_STDIO "Use USB-CDC for the debug console instead of uart0" OFF)
 
+# Also off by default: RP2040 has one native USB controller, host or device,
+# never both. When on, native USB switches to host mode to drive a USB
+# keyboard (pico_usbhostkbd, PORTING.md §1.6/§1.7/§2.1 step 9); PS/2 remains
+# available at the same time (separate GPIOs, no conflict) via consoleio's
+# merged key queue. Mutually exclusive with PICOPARANOIA_ENABLE_USB_STDIO --
+# checked below.
+option(PICOPARANOIA_ENABLE_USB_HOST "Enable USB-host keyboard support (TinyUSB host + HID)" OFF)
+
+if(PICOPARANOIA_ENABLE_USB_HOST AND PICOPARANOIA_ENABLE_USB_STDIO)
+    message(FATAL_ERROR
+        "PICOPARANOIA_ENABLE_USB_HOST and PICOPARANOIA_ENABLE_USB_STDIO cannot "
+        "both be on: RP2040 has one native USB controller, host or device, not "
+        "both (PORTING.md §1.7).")
+endif()
+
 # The whole image runs from SRAM (copy-to-RAM, §1.8), so code size is RAM.
 # Optimize for size by DEFAULT; speed-critical code opts back up to -O2 per
 # target (e.g. crypto_subset for AES/GCM/BLAKE2s throughput). Overrides the
@@ -39,6 +54,13 @@ add_subdirectory(pico_ntsc)
 
 # Standalone PS/2 keyboard driver (PORTING.md §0.B / §1.6).
 add_subdirectory(pico_ps2kbd)
+
+# Standalone USB-host keyboard driver (PORTING.md §0.B / §1.6) -- opt-in only;
+# with PICOPARANOIA_ENABLE_USB_HOST off, this isn't built and no USB/TinyUSB
+# host code is linked into the image at all.
+if(PICOPARANOIA_ENABLE_USB_HOST)
+    add_subdirectory(pico_usbhostkbd)
+endif()
 
 # Vendored FatFs R0.16 (PORTING.md §2.3).
 add_subdirectory(third_party/fatfs)
@@ -76,6 +98,11 @@ target_link_libraries(picoparanoia
     pico_ps2kbd
     fatfs
 )
+
+if(PICOPARANOIA_ENABLE_USB_HOST)
+    target_link_libraries(picoparanoia pico_usbhostkbd)
+    target_compile_definitions(picoparanoia PRIVATE PICOPARANOIA_ENABLE_USB_HOST)
+endif()
 
 # Run the whole image from SRAM — flash-bus hardening (PORTING.md §1.8).
 pico_set_binary_type(picoparanoia copy_to_ram)
