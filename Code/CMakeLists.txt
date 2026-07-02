@@ -47,9 +47,15 @@ add_executable(picoparanoia
     src/flashstruct.c
     src/arduino_rng_glue.cpp
     src/keymanager.cpp
+    src/fault.c
 )
 
 target_include_directories(picoparanoia PRIVATE src)
+
+# A missing return in a non-void function is UB that, at -O2/-Os on Cortex-M0+,
+# falls through into the next function and HardFaults (cost us the key-export
+# crash). Make it a hard error in our code so it can never recur silently.
+target_compile_options(picoparanoia PRIVATE -Werror=return-type)
 
 target_link_libraries(picoparanoia
     pico_stdlib

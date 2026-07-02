@@ -548,6 +548,10 @@ int fileblockencode_writedata(int c, void *v)
     f_write(f->write_file,"\n",1,&br);
     f->write_curpos = 0;
   }
+  return 0;   // PicoParanoia fix: the ParanoiaBox original omits this return.
+              // An int function with no return is UB; at -O2/-Os on Cortex-M0+
+              // it falls through into the next function and HardFaults. (The
+              // caller, base64_encode, ignores the value.)
 }
 
 int file_write_block(FIL *f, const char *header, void *v, uint16_t len)
