@@ -18,6 +18,9 @@
 #include "flashstruct.h"
 #include "keymanager.h"
 #include "fileenc.h"
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+#include "pico_usbhostkbd.h"
+#endif
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -134,6 +137,33 @@ static void sd_diag(BYTE drv, const char *label) {
     console_printcrlf();
 }
 
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+// Live-refreshing USB-host connection diagnostics: four counters at
+// successive stages, so a stall can be localized instead of guessed at.
+// core1_alive>0 with everything else 0 means the keyboard is drawing power
+// (or at least the port thinks so) but TinyUSB never sees a device attach --
+// points at the data lines (D+/D-) or the cable, not core1/firmware being
+// dead. dev_mounts>0 but hid_mounts==0 means it enumerated as USB but wasn't
+// recognized as HID. hid_mounts>0 but reports==0 means HID mounted but never
+// sent a report. reports>0 but nothing appears on screen when typing is a
+// decode bug in this codebase, not a hardware problem.
+static void usbhostkbd_diag(void) {
+    for (;;) {
+        console_clrscr();
+        console_puts("USB host keyboard diagnostics\r\n\r\n");
+        console_puts("core1 alive: ");  console_printuint(pico_usbhostkbd_diag_core1_alive());
+        console_puts("\r\ndev mounts:  "); console_printuint(pico_usbhostkbd_diag_dev_mounts());
+        console_puts("\r\nhid mounts:  "); console_printuint(pico_usbhostkbd_diag_hid_mounts());
+        console_puts("\r\nreports:     "); console_printuint(pico_usbhostkbd_diag_reports());
+        console_puts("\r\nentropy cnt: "); console_printuint(pico_usbhostkbd_entropy_count());
+        console_puts("\r\n\r\nPress SPACE to end");
+        sleep_ms(250);
+        int ch = console_inchar();
+        if (ch == ' ') break;
+    }
+}
+#endif
+
 // Main menu.
 static const char mainmenu[] =
     "\r\n\r\nM - Mount Drives\r\n\
@@ -148,8 +178,17 @@ Z - Show Raw Noise\r\n\
 C - Capture Entropy to File\r\n\
 F - Flash Store Self-Test\r\n\
 K - Key Manager\r\n\
-\r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXEDRZCFK";
+"
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+"U - USB Keyboard Diag\r\n\
+"
+#endif
+"\r\n\r\nOption: ";
+static const char mainmenuoptions[] = "MTNVXEDRZCFK"
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+"U"
+#endif
+;
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -228,6 +267,9 @@ int main(void) {
                 console_press_space();
                 break;
             case 'K': keymanager();         break;
+#ifdef PICOPARANOIA_ENABLE_USB_HOST
+            case 'U': usbhostkbd_diag();    break;
+#endif
         }
     }
 }

@@ -59,6 +59,17 @@ static void entropy_mix(void)
 uint32_t pico_usbhostkbd_entropy_sample(void) { return entropy_acc; }
 uint32_t pico_usbhostkbd_entropy_count(void)  { return entropy_count; }
 
+// --- bring-up diagnostics ---
+static volatile uint32_t diag_core1_alive;
+static volatile uint32_t diag_dev_mounts;
+static volatile uint32_t diag_hid_mounts;
+static volatile uint32_t diag_reports;
+
+uint32_t pico_usbhostkbd_diag_core1_alive(void) { return diag_core1_alive; }
+uint32_t pico_usbhostkbd_diag_dev_mounts(void)  { return diag_dev_mounts; }
+uint32_t pico_usbhostkbd_diag_hid_mounts(void)  { return diag_hid_mounts; }
+uint32_t pico_usbhostkbd_diag_reports(void)     { return diag_reports; }
+
 // --- HID boot-keyboard report decode ---
 
 // Official TinyUSB keycode->ASCII table (src/class/hid/hid.h), not hand
@@ -124,9 +135,23 @@ static void process_kbd_report(const hid_keyboard_report_t *report)
 
 // --- TinyUSB host callbacks (invoked from tuh_task(), i.e. on core1) ---
 
+// Device-level: fires for ANY enumerated USB device, before class drivers
+// (HID) get involved. The earliest signal that something real is on the bus.
+void tuh_mount_cb(uint8_t dev_addr)
+{
+    (void)dev_addr;
+    diag_dev_mounts++;
+}
+
+void tuh_umount_cb(uint8_t dev_addr)
+{
+    (void)dev_addr;
+}
+
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t idx, const uint8_t *desc_report, uint16_t desc_len)
 {
     (void)desc_report; (void)desc_len;
+    diag_hid_mounts++;
     tuh_hid_receive_report(dev_addr, idx);   // arm report reception for every HID interface
 }
 
@@ -137,6 +162,7 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t idx)
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t idx, const uint8_t *report, uint16_t len)
 {
+    diag_reports++;
     if (tuh_hid_interface_protocol(dev_addr, idx) == HID_ITF_PROTOCOL_KEYBOARD
         && len >= sizeof(hid_keyboard_report_t))
     {
@@ -152,12 +178,17 @@ static void core1_entry(void)
 {
     tusb_rhport_init_t host_init = { .role = TUSB_ROLE_HOST, .speed = TUSB_SPEED_AUTO };
     tusb_init(0, &host_init);   // RP2040 has one native USB controller: root port 0
-    for (;;) tuh_task();
+    for (;;)
+    {
+        tuh_task();
+        diag_core1_alive++;
+    }
 }
 
 void pico_usbhostkbd_init(void)
 {
     fifo_head = fifo_tail = 0;
     entropy_acc = entropy_count = 0;
+    diag_core1_alive = diag_dev_mounts = diag_hid_mounts = diag_reports = 0;
     multicore_launch_core1(core1_entry);
 }
