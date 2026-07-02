@@ -507,27 +507,42 @@ the implementation · **New** = no STM32 counterpart.
    `uart0`'s stdio driver links correctly when it's the target, and the image
    shrinks ~13.4 KB with USB-CDC out of the build. The device is fully
    functional with no USB code linked in this default config.
-9. **USB-host keyboard (opt-in feature) — implemented, untested on hardware
-   (2026-07-02):** `pico_usbhostkbd`, a standalone library matching
-   `pico_ps2kbd`'s shape (`init`/`getkey`, plus the same keystroke-timing
-   entropy accumulator blended into `random.cpp`), built only when
-   `PICOPARANOIA_ENABLE_USB_HOST` is on (default off; mutually exclusive with
-   `PICOPARANOIA_ENABLE_USB_STDIO` at CMake configure time -- RP2040 has one
-   native USB controller). TinyUSB host + the HID host class driver run
-   entirely on **core1** (`tuh_init()`/`tuh_task()` loop -- the documented
-   tenant for the otherwise-idle core, §1.5), decoding boot-protocol keyboard
-   reports via TinyUSB's own `HID_KEYCODE_TO_ASCII` table (not hand-
-   transcribed) and pushing into a FIFO `consoleio` drains alongside PS/2's,
-   so both sources can be live at once (separate GPIOs vs. USB, no conflict)
-   -- the "single key event queue" this section originally called for, drained
-   from two FIFOs in priority order rather than merged upstream into one.
-   `tusb_config.h` is deliberately minimal: one keyboard, no hub/MSC/CDC/
-   vendor class, matching §0.A's TCB-minimization principle -- confirmed via
-   the vendored TinyUSB's own fallback defaults, not just asserted. Verified:
-   builds and links cleanly with the flag on (36 tuh_/usbh_ symbols, all
-   `pico_usbhostkbd_*` API present) and off (byte-identical footprint to
-   before this feature, 92528/81192, confirming zero cost when disabled).
-   **Not yet tested with a real USB keyboard** -- that's the remaining step.
+9. **USB-host keyboard (opt-in feature) — DONE (2026-07-02):**
+   `pico_usbhostkbd`, a standalone library matching `pico_ps2kbd`'s shape
+   (`init`/`getkey`, plus the same keystroke-timing entropy accumulator
+   blended into `random.cpp`), built only when `PICOPARANOIA_ENABLE_USB_HOST`
+   is on (default off; mutually exclusive with `PICOPARANOIA_ENABLE_USB_STDIO`
+   at CMake configure time -- RP2040 has one native USB controller). TinyUSB
+   host + the HID host class driver run entirely on **core1**
+   (`tuh_init()`/`tuh_task()` loop -- the documented tenant for the otherwise-
+   idle core, §1.5), decoding boot-protocol keyboard reports via TinyUSB's own
+   `HID_KEYCODE_TO_ASCII` table (not hand-transcribed) and pushing into a FIFO
+   `consoleio` drains alongside PS/2's, so both sources can be live at once
+   (separate GPIOs vs. USB, no conflict) -- the "single key event queue" this
+   section originally called for, drained from two FIFOs in priority order
+   rather than merged upstream into one. `tusb_config.h` is deliberately
+   minimal: one keyboard, no hub/MSC/CDC/vendor class, matching §0.A's
+   TCB-minimization principle.
+
+   First hardware attempt found the keyboard undetected. Root cause was a
+   real hardware gap, not firmware: the board (a stock Pico module on the
+   custom PCB, confirmed from the schematic -- `RPi_Pico:RPi_Pico_SMD_TH`)
+   has `VBUS` wired only as a power *input* (pin 40, `power_in`), with no
+   net tying it to `VSYS` or any other 5V source -- a stock Pico's USB port
+   can never *source* power to a downstream device, only receive it, so a
+   plain USB-OTG adapter cannot power a keyboard through it. Diagnosed by
+   reading the schematic directly rather than guessing, then localized with
+   four connection-stage counters added to `pico_usbhostkbd`
+   (`core1_alive`/`dev_mounts`/`hid_mounts`/`reports`, menu **U**, refreshing
+   live) once external 5V got the keyboard powered -- all four counters
+   climbed cleanly (`core1_alive` in the tens of millions, `dev_mounts=1`,
+   `hid_mounts=2`, `reports` and the matching `entropy_cnt` both climbing
+   with each keystroke), and typed characters -- letters, backspace, enter,
+   arrows -- appear correctly at the normal console, confirmed on hardware.
+   A permanent VBUS power-injection circuit (diode or load-switch from VSYS,
+   not a direct short -- backfeed risk if the same port is ever used as a
+   device port) is future board-revision work, not required for this to work
+   with external power.
 
 ### 2.2 Repo / library layout
 
