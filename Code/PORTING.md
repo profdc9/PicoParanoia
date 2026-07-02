@@ -498,11 +498,15 @@ the implementation · **New** = no STM32 counterpart.
    returns 8 (the original 64-bit-nonce variant), not the RFC 8439 96-bit
    nonce everything else here assumes — both call sites pass an explicit,
    named `SYMMETRIC_IV_WIRE_LEN` (12) rather than trusting `ivSize()`.
-8. **Integrate:** the main menu loop is ported and everything above is wired
-   together and hardware-tested as a whole. Still outstanding: restore the
-   **default shipping config** — USB disabled, PS/2 keyboard, `uart0` (or no)
-   debug — in place of the temporary USB-CDC stdio bring-up console. The
-   device is fully functional without any USB code linked once that lands.
+8. **Integrate — DONE (2026-07-02):** the main menu loop is ported and
+   everything above is wired together and hardware-tested as a whole. Default
+   shipping config restored: `PICOPARANOIA_ENABLE_USB_STDIO` (default **OFF**)
+   selects `uart0` (GPIO0/1) as the debug console by default, with USB-CDC
+   available only as an explicit opt-in build flag for bring-up debugging.
+   Confirmed no USB/TinyUSB code links when off (0 `tud_`/`tusb_` symbols),
+   `uart0`'s stdio driver links correctly when it's the target, and the image
+   shrinks ~13.4 KB with USB-CDC out of the build. The device is fully
+   functional with no USB code linked in this default config.
 9. **USB-host keyboard (opt-in feature):** with `PICOPARANOIA_ENABLE_USB_HOST`,
    flip native USB to host mode and add the TinyUSB HID-host driver into the
    shared key queue. Debug stays on `uart0` (USB-CDC is unavailable in host

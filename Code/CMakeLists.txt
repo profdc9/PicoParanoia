@@ -15,6 +15,12 @@ include(pico_sdk_import.cmake)
 
 project(picoparanoia C CXX ASM)
 
+# USB is off by default (least privilege / auditability, PORTING.md §1.7,
+# §0.A): the debug console defaults to uart0, and turning USB-CDC stdio on
+# is a deliberate opt-in, not the shipping default. With this OFF, no USB
+# stdio code links at all.
+option(PICOPARANOIA_ENABLE_USB_STDIO "Use USB-CDC for the debug console instead of uart0" OFF)
+
 # The whole image runs from SRAM (copy-to-RAM, §1.8), so code size is RAM.
 # Optimize for size by DEFAULT; speed-critical code opts back up to -O2 per
 # target (e.g. crypto_subset for AES/GCM/BLAKE2s throughput). Overrides the
@@ -74,12 +80,17 @@ target_link_libraries(picoparanoia
 # Run the whole image from SRAM — flash-bus hardening (PORTING.md §1.8).
 pico_set_binary_type(picoparanoia copy_to_ram)
 
-# Debug console.
-# TEMPORARY bring-up choice: USB-CDC stdio (no UART adapter needed). The §1.7
-# default is uart0 + USB off/inert; restore that before USB-host support lands.
-# Native USB stays in device mode here, which is fine while host mode is deferred.
-pico_enable_stdio_usb(picoparanoia 1)
-pico_enable_stdio_uart(picoparanoia 0)
+# Debug console: uart0 (GPIO0/1) by default, matching the shipping config
+# (PORTING.md §1.7) -- no USB code linked, native USB stays uninitialized/
+# inert. Build with -DPICOPARANOIA_ENABLE_USB_STDIO=1 to switch to USB-CDC
+# for bring-up debugging on a board without a UART adapter handy.
+if(PICOPARANOIA_ENABLE_USB_STDIO)
+    pico_enable_stdio_usb(picoparanoia 1)
+    pico_enable_stdio_uart(picoparanoia 0)
+else()
+    pico_enable_stdio_usb(picoparanoia 0)
+    pico_enable_stdio_uart(picoparanoia 1)
+endif()
 
 # Generate .uf2, .hex, .bin, .map, etc.
 pico_add_extra_outputs(picoparanoia)

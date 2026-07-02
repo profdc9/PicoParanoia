@@ -6,8 +6,9 @@
 // there is no separate render/diff step. After each write we sync the hardware
 // cursor to the emulator's cursor.
 //
-// Input: the PS/2 keyboard FIFO, falling back to USB serial (handy for testing
-// without a keyboard).
+// Input: the PS/2 keyboard FIFO, falling back to whatever debug console stdio
+// is wired to (uart0 by default; USB-CDC if PICOPARANOIA_ENABLE_USB_STDIO was
+// set at build time) -- handy for testing without a keyboard.
 
 #include "consoleio.h"
 
@@ -48,7 +49,7 @@ int console_inchar(void)
 {
     int ch = pico_ps2kbd_getkey();
     if (ch >= 0) return ch;
-    int u = getchar_timeout_us(0);          // USB serial; <0 when none
+    int u = getchar_timeout_us(0);          // debug console stdio; <0 when none
     return (u < 0) ? -1 : u;
 }
 
