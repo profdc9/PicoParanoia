@@ -67,17 +67,15 @@ static void crypto_selftest(int *passed, int *failed) {
 // and is the boot signature (0x55 0xAA at offset 510/511) intact?
 static void sd_diag(BYTE drv, const char *label) {
     console_puts(label);
+    console_puts(":\r\n  ");
     DSTATUS st = disk_initialize(drv);
-    console_puts(" init="); console_printint(st);
+    console_puts("init="); console_printint(st);
     if (st & STA_NOINIT) { console_puts(" NOINIT\r\n"); return; }
     static BYTE buf[512];
     DRESULT r = disk_read(drv, buf, 0, 1);
     console_puts(" read="); console_printint(r);
-    if (r == RES_OK) {
-        console_puts(" sig=");
-        console_printuint(buf[510]); console_putch(','); console_printuint(buf[511]);
-        console_puts(buf[510] == 0x55 && buf[511] == 0xAA ? " OK" : " BAD");
-    }
+    if (r == RES_OK)
+        console_puts(buf[510] == 0x55 && buf[511] == 0xAA ? " sig=OK" : " sig=BAD");
     console_printcrlf();
 }
 
@@ -113,14 +111,15 @@ int main(void) {
     console_puts("PicoParanoia");
     console_lowvideo();
     console_puts(" bring-up\r\n\r\n");
-    console_puts("Crypto self-test (BLAKE2s/GCM/Curve25519): ");
+    console_puts("Crypto self-test: ");
     console_printint(cpass);
-    console_puts(" passed, ");
+    console_puts(" pass ");
     console_printint(cfail);
-    console_puts(cfail ? " FAILED\r\n" : " failed\r\n");
-    console_puts("SD low-level probe:\r\n");
-    sd_diag(0, "  ciphertext (spi1)");
-    sd_diag(1, "  plaintext  (spi0)");
+    console_puts(cfail ? " FAIL\r\n" : " fail\r\n");
+    console_puts("(BLAKE2s / AES-GCM / Curve25519)\r\n\r\n");
+    console_puts("SD probe:\r\n");
+    sd_diag(0, "ciphertext (spi1)");
+    sd_diag(1, "plaintext (spi0)");
     random_initialize();
     console_puts("Entropy circuit: ");
     console_puts(random_circuit_check() ? "OK" : "SUSPECT");
@@ -144,11 +143,11 @@ int main(void) {
         console_highvideo();
         console_puts(fs1_mounted ? "present" : "absent");
         console_lowvideo();
-        console_puts("\r\nSymmetric/Private key: ");
+        console_puts("\r\nPriv key: ");
         console_highvideo();
         keymanager_display_key(-1, &current_key_private);
         console_lowvideo();
-        console_puts("\r\nPublic key: ");
+        console_puts("\r\nPub key:  ");
         console_highvideo();
         keymanager_display_key(-1, &current_key_public);
         console_lowvideo();

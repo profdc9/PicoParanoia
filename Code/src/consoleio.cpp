@@ -21,7 +21,7 @@
 #include "ps2_kbd.h"
 
 #define CON_ROWS 25
-#define CON_COLS 80
+#define CON_COLS 40
 
 static screenchartype vbuf[CON_ROWS * CON_COLS];
 static int last_cx = -1, last_cy = -1;
@@ -37,7 +37,7 @@ static void sync_cursor(void) {
 
 void console_init(void)
 {
-    pico_ntsc_init(PICO_NTSC_MODE_80);      // sets sysclk 126 MHz; call before stdio
+    pico_ntsc_init(PICO_NTSC_MODE_40);      // 40-col, unscii-8-thin; sets sysclk 126 MHz
     TNTSCAnsi.begin(vbuf, CON_ROWS, CON_COLS);  // clears screen via the blit hook
     ps2_kbd_init();
     last_cx = last_cy = -1;
