@@ -16,4 +16,12 @@
                        (index) % (cur).columns,                      \
                        (unsigned char)(ch))
 
+// Whole-region clear: clear_region() fills a span of cells with blanks and
+// fires this once instead of the per-cell hook above, so the framebuffer gets
+// one fast solid fill instead of one glyph-blit per cell -- fewer writes to
+// the scanned-out framebuffer means less visible flicker on a clear.
+// `reverse` is true when the blanks should render as reverse video (white).
+#define TNTSCANSI_REGION_CLEARED(cur, y1, x1, y2, x2, reverse)       \
+    pico_ntsc_clear_span((y1), (x1), (y2), (x2), (reverse))
+
 #endif // TNTSCANSI_HOOK_H

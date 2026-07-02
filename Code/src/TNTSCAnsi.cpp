@@ -58,6 +58,14 @@ static void *vidmemmove(void *s1, const void *s2, size_t n)
 #define TNTSCANSI_CELL_CHANGED(cur, index, ch) ((void)0)
 #endif
 
+// Optional whole-region clear hook. clear_region() fires this once for the
+// whole span instead of the per-cell hook, so a host can do one fast solid
+// fill (e.g. pico_ntsc_clear_span) instead of one glyph-blit per cell. Default
+// is a no-op.
+#ifndef TNTSCANSI_REGION_CLEARED
+#define TNTSCANSI_REGION_CLEARED(cur, y1, x1, y2, x2, reverse) ((void)0)
+#endif
+
 // Write one cell and notify the hook with its linear index into cur.data.
 #define VS_PUT(cur, ptr, val) do {                                  \
     screenchartype *vp_ = (ptr);                                    \
@@ -91,10 +99,16 @@ void TNTSCAnsi_class::clear_region(int y1, int x1, int y2, int x2, int atrb)
 #ifdef VTATTRIB
   int clr_with = (atrb << 8) | 0x20;
 #else
-  int clr_with = 0x20;
+  // Same reverse-video bit packing as change_character() ((attrib & 0x08) << 4
+  // -> bit 7), so a clear while highlighted fills with reverse-video blanks
+  // instead of always plain ones.
+  int clr_with = 0x20 | ((atrb & 0x08) << 4);
 #endif
 
-  while (ch<=tr) { VS_PUT(cur, ch, clr_with); ch++; }
+  // Update the virtscreen buffer directly (no per-cell hook): the framebuffer
+  // gets one fast solid fill below instead of one glyph-blit per cell.
+  while (ch<=tr) *ch++ = (screenchartype)clr_with;
+  TNTSCANSI_REGION_CLEARED(cur, y1, x1, y2, x2, (clr_with & 0x80) != 0);
 }
 
 void TNTSCAnsi_class::clear_virtscreen(int mode)

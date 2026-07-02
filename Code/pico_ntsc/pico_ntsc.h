@@ -53,6 +53,18 @@ void pico_ntsc_put_cell(int row, int col, uint8_t cell);
 // Convenience: draw a NUL-terminated string from (row,col), clipped to the row.
 void pico_ntsc_put_text(int row, int col, const char *s, bool reverse);
 
+// Fast-clear a linear span of cells to a solid fill (black, or white if
+// `reverse`) -- no glyph rendering, so it's much cheaper than looping
+// pico_ntsc_put_cell() over the same cells, and touches each sample once
+// instead of once per glyph row, which reduces clear-induced flicker.
+//
+// The span is (row1,col1)..(row2,col2) inclusive in row-major reading order:
+// if row1 == row2 it's that row's [col1,col2]; otherwise it's the tail of
+// row1 from col1, all of the rows in between, and the head of row2 up to
+// col2 -- i.e. exactly the cells a linear walk over a rows*columns buffer
+// from (row1,col1) to (row2,col2) would touch.
+void pico_ntsc_clear_span(int row1, int col1, int row2, int col2, bool reverse);
+
 // Cursor (rendered as a blinking reverse-video block by the library).
 void pico_ntsc_set_cursor(int row, int col, bool visible);
 

@@ -121,13 +121,91 @@ void pico_ntsc_put_text(int row, int col, const char *s, bool reverse) {
         pico_ntsc_put_cell(row, col++, (uint8_t)*s++ | (reverse ? 0x80 : 0));
 }
 
+// Fill absolute sample range [S, E) to solid black/white. Assumes the whole
+// range lies in the "sync released" active window, which holds for every
+// caller here since ACTIVE_START is well past HSYNC. Whole 32-bit words
+// inside the range are stored directly, with no read-modify-write -- both
+// the sync bit (always 1/released) and the luma bit (the fill value) are
+// known constants for every sample in an interior word. Only the (at most
+// 15-sample) partial words at each end need masking.
+//
+// This is what actually matters for flicker: the naive per-sample loop this
+// replaces called the (never-inlined-in-practice) luma_set() once per 2-bit
+// sample, ~30 cycles each -- a full-screen clear (128,000 samples) cost
+// ~30ms, comparable to TWO 16.67ms frame periods, so the DMA scanned clean
+// across the whole screen roughly twice while the clear was still in
+// progress: guaranteed visible tearing, regardless of how the fill was
+// triggered. Word stores cost ~1-2 cycles per 16 samples.
+static inline void fill_span(int S, int E, bool reverse) {
+    if (S >= E) return;
+    uint32_t fillword = reverse ? 0xFFFFFFFFu : 0x55555555u;  // sync=1, luma=1|0, x16
+    int w0 = S >> 4, b0 = S & 15;
+    int w1 = E >> 4, b1 = E & 15;
+
+    if (w0 == w1) {
+        uint32_t mask = ((1u << ((b1 - b0) * 2)) - 1u) << (b0 * 2);
+        frame[w0] = (frame[w0] & ~mask) | (fillword & mask);
+        return;
+    }
+    if (b0 != 0) {
+        uint32_t mask = 0xFFFFFFFFu << (b0 * 2);
+        frame[w0] = (frame[w0] & ~mask) | (fillword & mask);
+        w0++;
+    }
+    for (int w = w0; w < w1; w++) frame[w] = fillword;
+    if (b1 != 0) {
+        uint32_t mask = (1u << (b1 * 2)) - 1u;
+        frame[w1] = (frame[w1] & ~mask) | (fillword & mask);
+    }
+}
+
+// Fill columns [col0, col1) of one row to solid black/white. col1 is exclusive
+// so a full-width fill is clear_cols(row, 0, cur_cols, ...).
+static void clear_cols(int row, int col0, int col1, bool reverse) {
+    if (row < 0 || row >= PICO_NTSC_ROWS) return;
+    if (col0 < 0) col0 = 0;
+    if (col1 > cur_cols) col1 = cur_cols;
+    if (col0 >= col1) return;
+    int scale = (cur_mode == PICO_NTSC_MODE_40) ? 2 : 1;
+    int x0 = ACTIVE_START + col0 * 8 * scale;
+    int x1 = ACTIVE_START + col1 * 8 * scale;
+    for (int gr = 0; gr < CELL_H; gr++) {
+        int line = ACTIVE_LINE0 + row * CELL_H + gr;
+        fill_span(sample_at(line, x0), sample_at(line, x1), reverse);
+    }
+}
+
+// Does the linear span (row1,col1)..(row2,col2) cover cell (r,c)?
+static bool span_contains(int row1, int col1, int row2, int col2, int r, int c) {
+    if (r < row1 || r > row2) return false;
+    if (row1 == row2) return c >= col1 && c <= col2;
+    if (r == row1) return c >= col1;
+    if (r == row2) return c <= col2;
+    return true;
+}
+
+void pico_ntsc_clear_span(int row1, int col1, int row2, int col2, bool reverse) {
+    if (row1 < 0) row1 = 0;
+    if (row2 >= PICO_NTSC_ROWS) row2 = PICO_NTSC_ROWS - 1;
+    if (row1 > row2) return;
+
+    uint32_t save = save_and_disable_interrupts();
+    if (cur_shown && span_contains(row1, col1, row2, col2, cur_row, cur_col))
+        cur_shown = false;   // don't fight the cursor
+
+    if (row1 == row2) {
+        clear_cols(row1, col1, col2 + 1, reverse);
+    } else {
+        clear_cols(row1, col1, cur_cols, reverse);
+        for (int r = row1 + 1; r < row2; r++) clear_cols(r, 0, cur_cols, reverse);
+        clear_cols(row2, 0, col2 + 1, reverse);
+    }
+    restore_interrupts(save);
+}
+
 void pico_ntsc_clear(void) {
     uint32_t save = save_and_disable_interrupts();
-    for (int r = 0; r < PICO_NTSC_ROWS; r++)
-        for (int gr = 0; gr < CELL_H; gr++) {
-            int line = ACTIVE_LINE0 + r * CELL_H + gr;
-            for (int i = 0; i < ACTIVE; i++) luma_set(sample_at(line, ACTIVE_START + i), 0);
-        }
+    for (int r = 0; r < PICO_NTSC_ROWS; r++) clear_cols(r, 0, cur_cols, false);
     cur_shown = false;
     restore_interrupts(save);
 }
