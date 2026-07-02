@@ -450,17 +450,33 @@ the implementation · **New** = no STM32 counterpart.
    (housekeeping for the eventual USB-host keyboard work below). **USB-host**
    keyboard deferred to
    step 9.
-4. **RNG:** ADC noise capture on GPIO26/27 → `random` → seeds crypto. Build in
-   the §1.3.1 discipline from the start: conservative credit + heavy
-   oversampling + stuck-source health check. Sanity-test LSB randomness.
-5. **Flash key store:** `flashstruct` rewrite → `keymanager` persists keys.
-6. **SD cards:** dual-bus FatFs glue (spi1=ciphertext, spi0=plaintext) →
-   `fileop` mounts both volumes.
-7. **File crypto:** `fileenc` end-to-end (encrypt on plaintext card → ciphertext
-   card and back).
-8. **Integrate:** port the main menu loop; full system test. This is the
+4. **RNG — DONE (2026-07-01):** direct BLAKE2s extraction from ADC noise on
+   GPIO26/27 (`random.cpp`), not the STM32's ChaCha-CSPRNG-via-NoiseSource
+   path. Heavy oversampling (512 raw bytes -> 32-byte block) plus continuous
+   SP 800-90B RCT/APT health tests and a peak-to-peak stuck-source check;
+   confirmed on hardware, including a real fault injection (pulling the
+   avalanche supply's 555 mid-run) correctly tripping the health check.
+   Later blended with `pico_ps2kbd` keystroke-timing jitter as defense in
+   depth (2026-07-01).
+5. **Flash key store — DONE (2026-07-01):** `flashstruct` rewritten for
+   RP2040 XIP flash (erase/program, not the STM32 register-level driver);
+   `keymanager` persists the AES-256-GCM-encrypted key table there. Curve25519
+   `dh1()`/`dh2()` draw entropy through a small `RNGClass::rand()` shim
+   (`arduino_rng_glue.cpp`) rather than the Arduino RNG/ChaCha stack, so the
+   vendored crypto library stays byte-for-byte unmodified. Confirmed on
+   hardware: keys persist across power-cycle and unlock with the passphrase.
+6. **SD cards — DONE (2026-07-01):** dual-bus FatFs glue (spi1=ciphertext,
+   spi0=plaintext, `sd_spi.c`) → `fileop` mounts both volumes. Confirmed on
+   hardware at the 12.5 MHz SD SPI-mode default.
+7. **File crypto — DONE (2026-07-02):** `fileenc` end-to-end (encrypt on
+   plaintext card → ciphertext card and back), both the AES/passphrase and
+   ECDH shared-secret paths. Confirmed on hardware: both key types round-trip
+   correctly.
+8. **Integrate:** the main menu loop is ported and everything above is wired
+   together and hardware-tested as a whole. Still outstanding: restore the
    **default shipping config** — USB disabled, PS/2 keyboard, `uart0` (or no)
-   debug. The device is fully functional here without any USB code linked.
+   debug — in place of the temporary USB-CDC stdio bring-up console. The
+   device is fully functional without any USB code linked once that lands.
 9. **USB-host keyboard (opt-in feature):** with `PICOPARANOIA_ENABLE_USB_HOST`,
    flip native USB to host mode and add the TinyUSB HID-host driver into the
    shared key queue. Debug stays on `uart0` (USB-CDC is unavailable in host
