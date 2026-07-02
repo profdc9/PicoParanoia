@@ -440,11 +440,15 @@ the implementation · **New** = no STM32 counterpart.
      no-op by default; PicoParanoia's `tntscansi_hook.h` maps it to
      `pico_ntsc_put_cell`). So VS_PUT updates the char buffer *and* blits the one
      changed cell — no diff/re-render. `consoleio` ported nearly verbatim on top;
-     input from PS/2 with a USB-serial fallback. `src/{consoleio,TNTSCAnsi,ps2_kbd}`.
+     input from PS/2 with a USB-serial fallback. `src/{consoleio,TNTSCAnsi}`,
+     `pico_ps2kbd/`.
 3. **Keyboard in — DONE (2026-06-30):** `ps2_kbd` ports the PS/2 state machine to
    an RP2040 falling-edge GPIO IRQ (clock GPIO5, data GPIO4) → ASCII FIFO →
    `console_getch`. Confirmed on hardware (with a 5V→3.3V shifter). USB-serial
-   input also works for keyboard-less testing. **USB-host** keyboard deferred to
+   input also works for keyboard-less testing. Later split into its own
+   standalone `pico_ps2kbd` library (own CMake target), matching `pico_ntsc`
+   (housekeeping for the eventual USB-host keyboard work below). **USB-host**
+   keyboard deferred to
    step 9.
 4. **RNG:** ADC noise capture on GPIO26/27 → `random` → seeds crypto. Build in
    the §1.3.1 discipline from the start: conservative credit + heavy
@@ -472,15 +476,18 @@ Code/
   pico_ntsc/          standalone, reusable video library — own CMake target
     pico_ntsc.h         clean public API: framebuffer + timing only, no app deps
     ...                 PIO programs, sync templates, glyph blitter
+  pico_ps2kbd/        standalone, reusable PS/2 keyboard library — own CMake target
+    pico_ps2kbd.h       clean public API: init + getkey, no app deps
+    pico_ps2kbd.c       GPIO edge IRQ, scancode decode, FIFO
   src/                PicoParanoia firmware
     main.c
-    consoleio.*         bridges pico_ntsc + keyboard to the app (not in the lib)
+    consoleio.*         bridges pico_ntsc + pico_ps2kbd to the app (not in either lib)
     crypto core:        cryptotool, keymanager, fileenc, random, flashstruct
-    drivers:            ps2_kbd, usb_host_kbd, sd_spi glue, logging shim
+    drivers:            usb_host_kbd (planned), sd_spi glue, logging shim
   third_party/        vendored + pinned, each with version/license/provenance
     crypto/             Arduino Cryptography Library (recompiled, no Arduino glue)
     fatfs/              ElmChan FatFs (portable core + our RP2040 disk-IO glue)
-  CMakeLists.txt      copy_to_ram binary type; links pico_ntsc + third_party
+  CMakeLists.txt      copy_to_ram binary type; links pico_ntsc + pico_ps2kbd + third_party
 ```
 
 The crypto core has no dependency on `pico_ntsc` or the USB/SD stacks beyond the

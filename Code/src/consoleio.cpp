@@ -18,7 +18,7 @@
 
 #include "pico_ntsc.h"
 #include "TNTSCAnsi.h"
-#include "ps2_kbd.h"
+#include "pico_ps2kbd.h"
 
 #define CON_ROWS 25
 #define CON_COLS 40
@@ -39,14 +39,14 @@ void console_init(void)
 {
     pico_ntsc_init(PICO_NTSC_MODE_40);      // 40-col, unscii-8-thin; sets sysclk 126 MHz
     TNTSCAnsi.begin(vbuf, CON_ROWS, CON_COLS);  // clears screen via the blit hook
-    ps2_kbd_init();
+    pico_ps2kbd_init();
     last_cx = last_cy = -1;
     sync_cursor();
 }
 
 int console_inchar(void)
 {
-    int ch = ps2_kbd_getkey();
+    int ch = pico_ps2kbd_getkey();
     if (ch >= 0) return ch;
     int u = getchar_timeout_us(0);          // USB serial; <0 when none
     return (u < 0) ? -1 : u;

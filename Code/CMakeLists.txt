@@ -31,6 +31,9 @@ add_subdirectory(third_party/crypto)
 # Standalone composite-video text library (PORTING.md §0.B / §1.5).
 add_subdirectory(pico_ntsc)
 
+# Standalone PS/2 keyboard driver (PORTING.md §0.B / §1.6).
+add_subdirectory(pico_ps2kbd)
+
 # Vendored FatFs R0.16 (PORTING.md §2.3).
 add_subdirectory(third_party/fatfs)
 
@@ -38,7 +41,6 @@ add_executable(picoparanoia
     src/main.cpp
     src/consoleio.cpp
     src/TNTSCAnsi.cpp
-    src/ps2_kbd.c
     src/sd_spi.c
     src/cryptotool.cpp
     src/editor.c
@@ -64,6 +66,7 @@ target_link_libraries(picoparanoia
     hardware_flash
     crypto_subset
     pico_ntsc
+    pico_ps2kbd
     fatfs
 )
 

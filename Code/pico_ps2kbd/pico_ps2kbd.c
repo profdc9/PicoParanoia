@@ -1,9 +1,9 @@
-// PS/2 keyboard driver (RP2040). See ps2_kbd.h.
+// pico_ps2kbd — RP2040 PS/2 keyboard driver. See pico_ps2kbd.h.
 // Ported from ParanoiaBox PS2Keyboard.cpp; the scancode table and frame state
 // machine are unchanged, only the I/O (digitalRead -> gpio_get, attachInterrupt
 // -> gpio edge IRQ) is RP2040-specific.
 
-#include "ps2_kbd.h"
+#include "pico_ps2kbd.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 
@@ -72,7 +72,7 @@ static void fifo_put(int ch) {
     fifo_head = np;
 }
 
-int ps2_kbd_getkey(void) {
+int pico_ps2kbd_getkey(void) {
     if (fifo_tail == fifo_head) return -1;
     int ch = fifo_buf[fifo_tail];
     int np = fifo_tail + 1;
@@ -128,7 +128,7 @@ static void ps2_irq(uint gpio, uint32_t events) {
     }
 }
 
-void ps2_kbd_init(void) {
+void pico_ps2kbd_init(void) {
     state = curbyte = paritybit = shiftkey = ctrlkey = lastkeyup = 0;
     fifo_head = fifo_tail = 0;
 
