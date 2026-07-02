@@ -370,7 +370,7 @@ the implementation · **New** = no STM32 counterpart.
 | `mini-printf.*` | **Reuse** | Pure C string formatting. |
 | `debugmsg.*` | **Shim** | Route through the logging shim (§1.7): `uart0` by default, USB-CDC only if `PICOPARANOIA_ENABLE_USB_STDIO` is set, or none. Not `Serial`. |
 | `cryptotool.*` | **Reuse** | AES/GCM/BLAKE2s via Crypto lib, base64, CRC16, KDF — all software. Only `heap_stack_distance()` (uses `sbrk`/frame address) needs an SDK-friendly version or removal. |
-| Crypto library | **Reuse (recompile, pinned subset)** | Vendor `libraries/Crypto/` at commit `37a76b8` (§2.3) — only the GCM/AES256/CTR/BLAKE2s/Curve25519 subset. Compile as plain C++ against the SDK. **Drop `RNGClass`/`ChaCha`/`NoiseSource`/Arduino glue entirely** — direct BLAKE2s extraction (§1.3.2) replaces the DRBG, so that Arduino-coupled code never enters the build. |
+| Crypto library | **Reuse (recompile, pinned subset)** | Vendor `libraries/Crypto/` at commit `37a76b8` (§2.3) — the GCM/AES256/CTR/BLAKE2s/Curve25519 subset, plus ChaCha/ChaChaPoly/Poly1305 added later (§2.1 step 7a) when the active AEAD cipher was swapped to ChaCha20-Poly1305; GCM/AES256 stay vendored for their KAT. Compile as plain C++ against the SDK. **Drop `RNGClass`/`NoiseSource`/Arduino glue entirely** — direct BLAKE2s extraction (§1.3.2) replaces the DRBG, so that Arduino-coupled code never enters the build (the standalone `ChaCha` class is vendored, but not `RNGClass`'s own use of it). |
 | `editor.c` | **Reuse** | Talks only to the `consoleio` API; works once console is up. |
 | `keymanager.*` | **Shim** | Logic is portable. Replace the flash-storage backing (see `flashstruct`) and the hardcoded `0x0801E000` address with an RP2040 QSPI region. |
 | `fileenc.*` | **Reuse** | Pure logic over `keymanager` + `fileop` + `cryptotool`. |
@@ -460,7 +460,8 @@ the implementation · **New** = no STM32 counterpart.
    depth (2026-07-01).
 5. **Flash key store — DONE (2026-07-01):** `flashstruct` rewritten for
    RP2040 XIP flash (erase/program, not the STM32 register-level driver);
-   `keymanager` persists the AES-256-GCM-encrypted key table there. Curve25519
+   `keymanager` persists the encrypted key table there (AES-256-GCM at the
+   time, ChaCha20-Poly1305 as of the cipher swap below). Curve25519
    `dh1()`/`dh2()` draw entropy through a small `RNGClass::rand()` shim
    (`arduino_rng_glue.cpp`) rather than the Arduino RNG/ChaCha stack, so the
    vendored crypto library stays byte-for-byte unmodified. Confirmed on
@@ -469,9 +470,34 @@ the implementation · **New** = no STM32 counterpart.
    spi0=plaintext, `sd_spi.c`) → `fileop` mounts both volumes. Confirmed on
    hardware at the 12.5 MHz SD SPI-mode default.
 7. **File crypto — DONE (2026-07-02):** `fileenc` end-to-end (encrypt on
-   plaintext card → ciphertext card and back), both the AES/passphrase and
-   ECDH shared-secret paths. Confirmed on hardware: both key types round-trip
-   correctly.
+   plaintext card → ciphertext card and back), both the symmetric/passphrase
+   and ECDH shared-secret paths. Confirmed on hardware: both key types
+   round-trip correctly.
+7a. **Symmetric cipher swap: AES-256-GCM → ChaCha20-Poly1305 — DONE
+   (2026-07-02):** AES-256-GCM was the original choice from the STM32-era
+   code; ChaCha20-Poly1305 is the better default now and was already in the
+   vendored Crypto library, sharing the exact same 256-bit key / 96-bit IV /
+   128-bit tag sizes. Done in three steps: (1) generalized every AES_*/aes_*
+   name that named a *role* rather than the algorithm to SYMMETRIC_* (
+   `cryptotool.h`), so `keymanager`/`fileenc` never spell out which cipher is
+   in use — verified as a pure rename with a byte-for-byte identical
+   recompile (two isolated worktrees, sha256-matched `.bin`/`.uf2`, only the
+   "AES"→"SYMM" key-type label differed in a controlled re-diff); (2)
+   vendored `ChaCha.[ch]`/`ChaChaPoly.[ch]`/`Poly1305.[ch]` (§2.3) and
+   KAT-validated on hardware before wiring anything in (RFC 8439 §2.8.2
+   vector); (3) cut over `symmetric_memcrypt()` and `fileenc`'s streaming
+   cipher to `ChaChaPoly`, bumping `FILEENC_EXPORT_VERSION`. Confirmed on
+   hardware: 5/5 KAT self-test, fresh key generation, full encrypt/decrypt
+   round-trip. This is a clean cutover, not a migration — pre-existing
+   AES-256-GCM key stores/files are rejected (`"Header Tag is invalid"`, the
+   AEAD tag gate fires before the version check and is unconditional on a
+   cipher mismatch); the flash key store correctly falls back to its
+   `000DESTRUCT0` reset flow. AES-256-GCM stays vendored, still exercised by
+   its own KAT, but is no longer the active cipher. Gotcha found and
+   documented (`third_party/crypto/PROVENANCE.md`): `ChaChaPoly::ivSize()`
+   returns 8 (the original 64-bit-nonce variant), not the RFC 8439 96-bit
+   nonce everything else here assumes — both call sites pass an explicit,
+   named `SYMMETRIC_IV_WIRE_LEN` (12) rather than trusting `ivSize()`.
 8. **Integrate:** the main menu loop is ported and everything above is wired
    together and hardware-tested as a whole. Still outstanding: restore the
    **default shipping config** — USB disabled, PS/2 keyboard, `uart0` (or no)
