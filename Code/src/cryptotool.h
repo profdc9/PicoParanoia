@@ -4,13 +4,14 @@
 // cryptotool — ported from ParanoiaBox cryptotool.cpp.
 //
 // The base64 text-armor codec plus the small crypto helpers layered on the
-// vendored primitives (BLAKE2s, and an AEAD symmetric cipher -- currently
-// AES-256-GCM, see symmetric_memcrypt() in cryptotool.cpp). The SYMMETRIC_*
-// sizes below name the *role* each value plays (key/IV/tag/padding), not the
-// specific algorithm, so callers (keymanager, fileenc) never spell out which
-// cipher is in use -- only cryptotool.cpp's implementation does. AES-256-GCM
-// and ChaCha20-Poly1305 share these exact sizes (256-bit key, 96-bit IV,
-// 128-bit tag), so swapping the implementation later needs no caller changes.
+// vendored primitives (BLAKE2s, and an AEAD symmetric cipher -- ChaCha20-
+// Poly1305 as of this file, see symmetric_memcrypt() in cryptotool.cpp; was
+// AES-256-GCM). The SYMMETRIC_* sizes below name the *role* each value plays
+// (key/IV/tag/padding), not the specific algorithm, so callers (keymanager,
+// fileenc) never spell out which cipher is in use -- only cryptotool.cpp's
+// implementation does. AES-256-GCM and ChaCha20-Poly1305 share these exact
+// sizes (256-bit key, 96-bit IV, 128-bit tag), which is what made the swap
+// possible without changing any caller or any on-disk/on-flash layout.
 // Two helpers from the original are intentionally NOT ported: ctblake2srehash
 // (declared but never defined/used upstream) and heap_stack_distance (a debug
 // aid that relies on sbrk).

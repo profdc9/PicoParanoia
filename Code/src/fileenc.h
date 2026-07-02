@@ -28,7 +28,18 @@ extern "C" {
 #endif  
 
 #define FILEENC_EXPORT_ID 0xBBCC
-#define FILEENC_EXPORT_VERSION 0x1000
+// Bumped 0x1000 -> 0x1001: symmetric_memcrypt's AEAD cipher changed from
+// AES-256-GCM to ChaCha20-Poly1305 (cryptotool.cpp). The on-disk layout is
+// identical either way, so this correctly marks the new format for future
+// reference -- but note it is NOT what rejects old files in practice.
+// fileenc_decrypt_state() checks the header's AEAD tag before comparing
+// fhp.vers, and decrypting an AES-GCM-tagged header with ChaCha20-Poly1305
+// fails that tag check unconditionally (any key), so old files are actually
+// rejected with "Header Tag is invalid" -- a stronger, cryptographic gate
+// that fires first. The version check remains real protection for a future
+// format change that keeps the same cipher (where the tag would still
+// validate but field semantics changed).
+#define FILEENC_EXPORT_VERSION 0x1001
 
 #define FILEENC_FILENAME 256
 #define FILEENC_FUTUREPROOF_LENGTH 512

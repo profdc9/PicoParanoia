@@ -22,8 +22,7 @@ freely, subject to the following restrictions:
 #include <string.h>
 #include <stdint.h>
 #include <ff.h>
-#include <AES.h>
-#include <GCM.h>
+#include <ChaChaPoly.h>
 #include "consoleio.h"
 #include "fileop.h"
 #include "fileenc.h"
@@ -55,9 +54,16 @@ int fileenc_check_key_selected(void)
 
 #define FILEENC_WRITEBUF_SIZE 36
 
+// ChaChaPoly::ivSize() returns 8 (the original 64-bit-nonce ChaCha variant),
+// not the RFC 8439 96-bit nonce this codebase uses everywhere else -- see
+// cryptotool.cpp / third_party/crypto/PROVENANCE.md. This file instantiates
+// ChaChaPoly directly (streaming payload cipher, bypassing symmetric_memcrypt)
+// so it needs the same explicit wire length.
+#define SYMMETRIC_IV_WIRE_LEN 12
+
 typedef struct _fileenc_readbuf
 {
-  GCM<AES256> *read_cipher;
+  ChaChaPoly *read_cipher;
   FIL read_file;
   uint8_t  read_buf[FILEENC_READBUF_SIZE];
   uint16_t read_filled;
@@ -156,7 +162,7 @@ void fileenc_encrypt_state(fileenc_state *fs)
     int secretlen;
     if (keymanager_compute_secret(secret, &secretlen))
     {
-      GCM<AES256> read_cipher;
+      ChaChaPoly read_cipher;
       uint8_t salt2[KEYMANAGER_HASHLEN];
       uint8_t iv2[SYMMETRIC_IVLEN];
       uint8_t key1[SYMMETRIC_KEYLEN];
@@ -188,7 +194,7 @@ void fileenc_encrypt_state(fileenc_state *fs)
       fs->read_progress = 0;
       key_derivation_function((void *)key2, secret, secretlen, salt2, sizeof(salt2));
       fs->read_cipher->setKey((const uint8_t *)key2, fs->read_cipher->keySize());
-      fs->read_cipher->setIV((const uint8_t *)iv2, fs->read_cipher->ivSize());
+      fs->read_cipher->setIV((const uint8_t *)iv2, SYMMETRIC_IV_WIRE_LEN);
       base64_encode(fileenc_base64_readdata,(void *)fs,  fileenc_base64_writedata, (void *)fs);
       fileenc_base64_writedata(-1, (void *)fs);
       fs->read_cipher->computeTag((uint8_t *)tag, SYMMETRIC_TAGLEN);
@@ -227,7 +233,7 @@ typedef struct _filedec_readbuf
   uint16_t     write_curpos; 
   FSIZE_t      write_progress;
   FSIZE_t      write_total;
-  GCM<AES256>  *write_cipher;
+  ChaChaPoly  *write_cipher;
   fileenc_total_header fth;
 } filedec_state;
 
@@ -329,7 +335,7 @@ void fileenc_decrypt_state(filedec_state *fs)
               fs->fth.fhpu.fhp.filename[sizeof(fs->fth.fhpu.fhp.filename)-1] = '\000';
               if (file_skip_header(&fs->read_file,"PARANOIABOX-PAYLOAD",0))
               {
-                GCM<AES256>  write_cipher;
+                ChaChaPoly  write_cipher;
                 uint8_t key2[SYMMETRIC_KEYLEN];
                 key_derivation_function((void *)key2, secret, secretlen, fs->fth.fhpu.fhp.salt2, sizeof(fs->fth.fhpu.fhp.salt2));
                 fs->write_cipher = &write_cipher;
@@ -339,7 +345,7 @@ void fileenc_decrypt_state(filedec_state *fs)
                 fs->write_progress = 0;
                 fs->write_total = fs->fth.fhpu.fhp.file_length;
                 fs->write_cipher->setKey((const uint8_t *)key2, fs->write_cipher->keySize());
-                fs->write_cipher->setIV((const uint8_t *)fs->fth.fhpu.fhp.iv2, fs->write_cipher->ivSize());
+                fs->write_cipher->setIV((const uint8_t *)fs->fth.fhpu.fhp.iv2, SYMMETRIC_IV_WIRE_LEN);
                 base64_decode(filedec_base64_readdata,(void *)fs,  filedec_base64_writedata, (void *)fs);
                 filedec_base64_writedata(-1, (void *)fs);
                 if (f_tell(&fs->write_file) == fs->fth.fhpu.fhp.file_length)

@@ -3,17 +3,16 @@
 // Ported from ParanoiaBox cryptotool.cpp. The base64 codec is stream-oriented
 // (read/write callbacks) so it composes with fileop's block reader/writer. The
 // crypto helpers wrap the vendored primitives (BLAKE2s, and symmetric_memcrypt's
-// AEAD cipher -- currently AES-256-GCM; see cryptotool.h for why callers never
-// need to know that). Two original helpers are intentionally omitted (see
-// cryptotool.h): the unused ctblake2srehash and the sbrk-based
+// AEAD cipher -- ChaCha20-Poly1305 as of this file; see cryptotool.h for why
+// callers never need to know that). Two original helpers are intentionally
+// omitted (see cryptotool.h): the unused ctblake2srehash and the sbrk-based
 // heap_stack_distance.
 
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <BLAKE2s.h>
-#include <AES.h>
-#include <GCM.h>
+#include <ChaChaPoly.h>
 #include "cryptotool.h"
 
 #ifdef __cplusplus
@@ -159,14 +158,26 @@ int key_derivation_function(void *hash, void *passphrase, size_t passphrase_len,
 
 // The one place that names the actual AEAD cipher in use. Everything above
 // this file (keymanager, fileenc) calls symmetric_memcrypt() and only ever
-// sees SYMMETRIC_* sizes -- swapping the cipher (e.g. to ChaCha20-Poly1305,
-// which uses the same 256-bit key / 96-bit IV / 128-bit tag) means changing
-// only this function.
+// sees SYMMETRIC_* sizes. Was GCM<AES256>; now ChaCha20-Poly1305 (RFC 8439),
+// same 256-bit key / 96-bit IV / 128-bit tag, so no caller or on-disk/
+// on-flash layout changed. FILEENC_EXPORT_VERSION was bumped alongside this
+// swap so old AES-256-GCM files fail with a clear "wrong version" instead of
+// a confusing tag mismatch.
+//
+// ChaChaPoly::ivSize() returns 8 (the original 64-bit-nonce ChaCha variant),
+// NOT 12 -- unlike GCM<AES256>::ivSize(), which correctly reports its real
+// wire IV length. So this function does NOT trust cipher.ivSize() the way
+// the AES-GCM version did; SYMMETRIC_IV_WIRE_LEN below is the actual RFC 8439
+// 96-bit nonce length, confirmed against the vendored library's own
+// TestChaChaPoly.ino (which always passes 12 explicitly, never ivSize()).
+// See third_party/crypto/PROVENANCE.md.
+#define SYMMETRIC_IV_WIRE_LEN 12
+
 int symmetric_memcrypt(bool encrypt, void *key, void *iv, void *tag, void *buffer, size_t inlen)
 {
-    GCM<AES256> cipher;
+    ChaChaPoly cipher;
     cipher.setKey((const uint8_t *)key, cipher.keySize());
-    cipher.setIV((const uint8_t *)iv, cipher.ivSize());
+    cipher.setIV((const uint8_t *)iv, SYMMETRIC_IV_WIRE_LEN);
     if (encrypt)
     {
         cipher.encrypt((uint8_t *)buffer, (uint8_t *)buffer, inlen);
