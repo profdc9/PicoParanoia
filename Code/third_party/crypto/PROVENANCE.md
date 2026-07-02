@@ -10,8 +10,8 @@
 
 Only the primitives PicoParanoia uses are vendored, to keep the trusted
 computing base small. The rest of the arduinolibs repo and the unused Crypto
-modules (SHA-2/3, ChaCha/Poly1305, EAX/OMAC/XTS, Ed25519, P521, HKDF, the
-ESP32 AES path, examples, …) are deliberately excluded.
+modules (SHA-2/3, EAX/OMAC/XTS, Ed25519, P521, HKDF, the ESP32 AES path,
+examples, …) are deliberately excluded.
 
 ## Files in this directory
 
@@ -22,6 +22,20 @@ plus the core `Crypto.[ch]`, `Hash.[ch]`, hash `BLAKE2s.[ch]`, and
 `utility/{EndianUtil,LimbUtil,ProgMemUtil,RotateUtil}.h`.
 
 ECDH25519 (keymanager): `Curve25519.[ch]`, `BigNumberUtil.[ch]`, and `RNG.h`.
+
+ChaCha20-Poly1305 (candidate replacement for AES-256-GCM as the AEAD backing
+`symmetric_memcrypt()`, PORTING.md-adjacent — see cryptotool.h's SYMMETRIC_*
+naming): `ChaCha.[ch]`, `ChaChaPoly.[ch]`, `Poly1305.[ch]`. Same 256-bit key /
+96-bit IV / 128-bit tag as GCM, so `ChaChaPoly` (which inherits
+`AuthenticatedCipher`, same as `GCMCommon`) is close to drop-in. **Vendored
+and KAT-validated only** (the RFC 8439 §2.8.2 "Sunscreen" vector, in
+`main.cpp`'s `crypto_selftest()`) -- not yet wired into `symmetric_memcrypt()`.
+One real gotcha for whoever does that swap: `ChaChaPoly::ivSize()` returns
+`8` (the original 64-bit-nonce variant) by default, not `12`. `setIV()` must
+be called with an explicit length of `12` to get the IETF/RFC 8439 96-bit
+nonce; `symmetric_memcrypt()`'s current `cipher.setIV(iv, cipher.ivSize())`
+pattern (fine for GCM, whose `ivSize()` correctly returns 12) would silently
+pick the wrong nonce size for ChaChaPoly if reused unchanged.
 
 ## ECDH25519 without vendoring the Arduino RNG
 
@@ -48,10 +62,13 @@ upstream and arrange for `dh1()` to be unused:
 
 ## Deliberately excluded
 
-- **`RNG.cpp` / `ChaCha` / `NoiseSource.*`** — the Arduino-coupled RNG stack
-  (only `RNG.h` is present, for compilation as described above).
-- Unused Crypto modules (SHA-2/3, ChaCha/Poly1305, EAX/OMAC/XTS, Ed25519, P521,
-  HKDF, the ESP32 AES path, examples, …).
+- **`RNG.cpp` / `NoiseSource.*`** — the Arduino-coupled RNG stack (only
+  `RNG.h` is present, for compilation as described above). `RNG.cpp`'s own
+  CSPRNG happens to be built on the same `ChaCha` class now vendored for
+  `ChaChaPoly` (a different, legitimate consumer) -- vendoring `ChaCha.cpp`
+  does not change whether `RNG.cpp` is compiled; it still isn't.
+- Unused Crypto modules (SHA-2/3, EAX/OMAC/XTS, Ed25519, P521, HKDF, the
+  ESP32 AES path, examples, …).
 
 `CRYPTO_AES_ESP32` is never defined, so `AES256` uses the software `AESCommon`
 implementation (not `AESEsp32.cpp`, which is not vendored).

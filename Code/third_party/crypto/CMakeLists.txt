@@ -15,6 +15,9 @@ add_library(crypto_subset STATIC
     CTR.cpp
     Curve25519.cpp
     BigNumberUtil.cpp
+    ChaCha.cpp
+    ChaChaPoly.cpp
+    Poly1305.cpp
 )
 
 # NOTE: RNG.cpp is deliberately NOT compiled. Curve25519.cpp #includes "RNG.h"
