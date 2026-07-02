@@ -31,16 +31,6 @@ int  pico_usbhostkbd_getkey(void);  // next decoded byte, or -1 if the FIFO is e
 uint32_t pico_usbhostkbd_entropy_sample(void);
 uint32_t pico_usbhostkbd_entropy_count(void);
 
-// Bring-up diagnostics: counters at each stage of the connection, so a stall
-// can be localized instead of guessed at. All monotonically increasing;
-// read from core0, written from core1 -- single-word reads/writes are
-// naturally coherent on RP2040 (no per-core cache), no locking needed for
-// a "did this number change" check.
-uint32_t pico_usbhostkbd_diag_core1_alive(void);  // tuh_task() loop iterations (>0 means core1 is running)
-uint32_t pico_usbhostkbd_diag_dev_mounts(void);   // tuh_mount_cb count: ANY USB device enumerated (pre-HID)
-uint32_t pico_usbhostkbd_diag_hid_mounts(void);   // tuh_hid_mount_cb count: a HID interface enumerated
-uint32_t pico_usbhostkbd_diag_reports(void);      // tuh_hid_report_received_cb count: any HID report received
-
 #ifdef __cplusplus
 }
 #endif

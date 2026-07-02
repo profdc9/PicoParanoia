@@ -1,26 +1,19 @@
-// PicoParanoia — bring-up demo.
+// PicoParanoia — main program.
 //
-// Step 1: verifies the vendored crypto subset (AES-256-GCM + BLAKE2s KATs).
-// Step 2: composite video via pico_ntsc.
-// Step 3: console — consoleio + TNTSCAnsi (VT100) over pico_ntsc, with PS/2
-//         keyboard input. This demo echoes typed keys onto the TV.
+// Boots the console (video + keyboard), runs the vendored crypto KATs and the
+// entropy-circuit health check silently, then goes straight into the main
+// menu.
 
 #include <stdio.h>
 #include <string.h>
 #include "pico/stdlib.h"
 
 #include "consoleio.h"
-#include "ff.h"
-#include "diskio.h"
 #include "fileop.h"
 #include "editor.h"
 #include "random.h"
-#include "flashstruct.h"
 #include "keymanager.h"
 #include "fileenc.h"
-#ifdef PICOPARANOIA_ENABLE_USB_HOST
-#include "pico_usbhostkbd.h"
-#endif
 
 #include <BLAKE2s.h>
 #include <GCM.h>
@@ -121,49 +114,6 @@ static void crypto_selftest(int *passed, int *failed) {
     if (failed) *failed = fail;
 }
 
-// Low-level SD probe: does the card initialize, does a raw sector read work,
-// and is the boot signature (0x55 0xAA at offset 510/511) intact?
-static void sd_diag(BYTE drv, const char *label) {
-    console_puts(label);
-    console_puts(":\r\n  ");
-    DSTATUS st = disk_initialize(drv);
-    console_puts("init="); console_printint(st);
-    if (st & STA_NOINIT) { console_puts(" NOINIT\r\n"); return; }
-    static BYTE buf[512];
-    DRESULT r = disk_read(drv, buf, 0, 1);
-    console_puts(" read="); console_printint(r);
-    if (r == RES_OK)
-        console_puts(buf[510] == 0x55 && buf[511] == 0xAA ? " sig=OK" : " sig=BAD");
-    console_printcrlf();
-}
-
-#ifdef PICOPARANOIA_ENABLE_USB_HOST
-// Live-refreshing USB-host connection diagnostics: four counters at
-// successive stages, so a stall can be localized instead of guessed at.
-// core1_alive>0 with everything else 0 means the keyboard is drawing power
-// (or at least the port thinks so) but TinyUSB never sees a device attach --
-// points at the data lines (D+/D-) or the cable, not core1/firmware being
-// dead. dev_mounts>0 but hid_mounts==0 means it enumerated as USB but wasn't
-// recognized as HID. hid_mounts>0 but reports==0 means HID mounted but never
-// sent a report. reports>0 but nothing appears on screen when typing is a
-// decode bug in this codebase, not a hardware problem.
-static void usbhostkbd_diag(void) {
-    for (;;) {
-        console_clrscr();
-        console_puts("USB host keyboard diagnostics\r\n\r\n");
-        console_puts("core1 alive: ");  console_printuint(pico_usbhostkbd_diag_core1_alive());
-        console_puts("\r\ndev mounts:  "); console_printuint(pico_usbhostkbd_diag_dev_mounts());
-        console_puts("\r\nhid mounts:  "); console_printuint(pico_usbhostkbd_diag_hid_mounts());
-        console_puts("\r\nreports:     "); console_printuint(pico_usbhostkbd_diag_reports());
-        console_puts("\r\nentropy cnt: "); console_printuint(pico_usbhostkbd_entropy_count());
-        console_puts("\r\n\r\nPress SPACE to end");
-        sleep_ms(250);
-        int ch = console_inchar();
-        if (ch == ' ') break;
-    }
-}
-#endif
-
 // Main menu.
 static const char mainmenu[] =
     "\r\n\r\nM - Mount Drives\r\n\
@@ -176,19 +126,10 @@ D - Decrypt File\r\n\
 R - Randomness Test\r\n\
 Z - Show Raw Noise\r\n\
 C - Capture Entropy to File\r\n\
-F - Flash Store Self-Test\r\n\
 K - Key Manager\r\n\
 "
-#ifdef PICOPARANOIA_ENABLE_USB_HOST
-"U - USB Keyboard Diag\r\n\
-"
-#endif
 "\r\n\r\nOption: ";
-static const char mainmenuoptions[] = "MTNVXEDRZCFK"
-#ifdef PICOPARANOIA_ENABLE_USB_HOST
-"U"
-#endif
-;
+static const char mainmenuoptions[] = "MTNVXEDRZCK";
 
 int main(void) {
     // console_init() brings up video (sets sysclk 126 MHz) and the keyboard;
@@ -196,30 +137,18 @@ int main(void) {
     console_init();
 
     stdio_init_all();
-    printf("\n=== PicoParanoia console demo ===\n");
-    int cpass = 0, cfail = 0;
-    crypto_selftest(&cpass, &cfail);
+    crypto_selftest(NULL, NULL);   // logged via printf only; no TV display
 
-    // One-shot boot diagnostics on the TV.
-    console_clrscr();
-    console_highvideo();
-    console_puts("PicoParanoia");
-    console_lowvideo();
-    console_puts(" bring-up\r\n\r\n");
-    console_puts("Crypto self-test: ");
-    console_printint(cpass);
-    console_puts(" pass ");
-    console_printint(cfail);
-    console_puts(cfail ? " FAIL\r\n" : " fail\r\n");
-    console_puts("(BLAKE2s/AES-GCM/Curve25519/\r\n ChaCha20-Poly1305)\r\n\r\n");
-    console_puts("SD probe:\r\n");
-    sd_diag(0, "ciphertext (spi1)");
-    sd_diag(1, "plaintext (spi0)");
     random_initialize();
-    console_puts("Entropy circuit: ");
-    console_puts(random_circuit_check() ? "OK" : "SUSPECT");
-    console_printcrlf();
-    console_press_space();
+    if (!random_circuit_check()) {
+        console_clrscr();
+        console_highvideo();
+        console_puts("ENTROPY CIRCUIT ERROR\r\n");
+        console_lowvideo();
+        console_puts("Noise source failed its health check.\r\n");
+        console_puts("Keys/nonces may not be safe to\r\ngenerate until this is fixed.\r\n");
+        console_press_space();
+    }
 
     keymanager_initialize();
     file_mount_volume(0);   // mount both cards (fileop's fs0/fs1)
@@ -259,17 +188,7 @@ int main(void) {
             case 'R': randomness_test();    break;
             case 'Z': randomness_show();    break;
             case 'C': randomness_capture_to_file(); break;
-            case 'F':
-                console_clrscr();
-                console_gotoxy(1, 4);
-                console_puts("Flash store self-test: ");
-                console_puts(flashstruct_selftest() ? "PASS" : "FAIL");
-                console_press_space();
-                break;
             case 'K': keymanager();         break;
-#ifdef PICOPARANOIA_ENABLE_USB_HOST
-            case 'U': usbhostkbd_diag();    break;
-#endif
         }
     }
 }

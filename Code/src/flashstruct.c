@@ -31,9 +31,7 @@
 
 // Reserved persistent region: top 64 KB of the (2 MB) Pico flash. The program
 // image lives at the bottom of flash and is far smaller, so this never
-// collides. The key store (keymanager) sits at the base of this region; the
-// self-test uses a scratch sector near the top.
-#define FLASHSTRUCT_TEST_OFFSET  (2u * 1024u * 1024u - FLASH_SECTOR_SIZE)  // last 4 KB sector
+// collides. The key store (keymanager) sits at the base of this region.
 
 int readflashstruct(void *flash_page, int num_blocks, void *blocks[], int blocklen[])
 {
@@ -107,27 +105,4 @@ int writeflashstruct(void *flash_page, int num_blocks, void *blocks[], int block
     running += (size_t)blocklen[n];
   }
   return ok;
-}
-
-// On-hardware round-trip check of the flash primitive on a scratch sector, so
-// the store can be trusted before keymanager depends on it. Returns 1 on pass.
-int flashstruct_selftest(void)
-{
-  void *page = (void *)(uintptr_t)(XIP_BASE + FLASHSTRUCT_TEST_OFFSET);
-
-  uint8_t a[100], b[7], a2[100], b2[7];
-  for (int i = 0; i < (int)sizeof(a); i++) a[i] = (uint8_t)(i * 7 + 1);
-  for (int i = 0; i < (int)sizeof(b); i++) b[i] = (uint8_t)(0xA5 ^ i);
-
-  void *wblocks[2] = { a, b };
-  int   wlens[2]   = { (int)sizeof(a), (int)sizeof(b) };
-  if (!writeflashstruct(page, 2, wblocks, wlens)) return 0;
-
-  memset(a2, 0, sizeof(a2));
-  memset(b2, 0, sizeof(b2));
-  void *rblocks[2] = { a2, b2 };
-  int   rlens[2]   = { (int)sizeof(a2), (int)sizeof(b2) };
-  if (!readflashstruct(page, 2, rblocks, rlens)) return 0;
-
-  return (memcmp(a, a2, sizeof(a)) == 0) && (memcmp(b, b2, sizeof(b)) == 0);
 }

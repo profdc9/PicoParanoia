@@ -33,7 +33,6 @@ extern "C" {
 
 int readflashstruct(void *flash_page, int num_blocks, void *blocks[], int blocklen[]);
 int writeflashstruct(void *flash_page, int num_blocks, void *blocks[], int blocklen[]);
-int flashstruct_selftest(void);
 
 #ifdef __cplusplus
 }
