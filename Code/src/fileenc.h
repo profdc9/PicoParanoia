@@ -39,7 +39,7 @@ extern "C" {
 // that fires first. The version check remains real protection for a future
 // format change that keeps the same cipher (where the tag would still
 // validate but field semantics changed).
-#define FILEENC_EXPORT_VERSION 0x1001
+#define FILEENC_EXPORT_VERSION 0x1002
 
 #define FILEENC_FILENAME 256
 #define FILEENC_FUTUREPROOF_LENGTH 512
@@ -65,10 +65,17 @@ typedef union _fileenc_header_payload_union
   uint8_t filler[FILEENC_FUTUREPROOF_LENGTH];
 } fileenc_header_payload_union;
 
+typedef struct _fileenc_secret_concatenation
+{
+  uint8_t        shared_secret_ephemeral[KEYMANAGER_MAX_SECRET_LEN];
+  uint8_t        shared_secret_private[KEYMANAGER_MAX_SECRET_LEN];
+} fileenc_secret_concatenation;
+
 typedef struct _fileenc_total_header
 {
   uint8_t                         salt1[KEYMANAGER_HASHLEN];
   uint8_t                         iv1[SYMMETRIC_IVLEN];
+  uint8_t                         ephemeral_public_key[KEYMANAGER_PUBLICKEY_LEN];
   uint8_t                         tag1[SYMMETRIC_TAGLEN];
   fileenc_header_payload_union    fhpu;
 } fileenc_total_header;

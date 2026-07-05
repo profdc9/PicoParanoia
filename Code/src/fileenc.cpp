@@ -159,22 +159,42 @@ void fileenc_encrypt_state(fileenc_state *fs)
   {
     uint8_t secret[KEYMANAGER_MAX_SECRET_LEN];
     uint8_t tag[SYMMETRIC_TAGLEN];
-    int secretlen;
-    if (keymanager_compute_secret(secret, &secretlen))
+    int secretlen = sizeof(secret);
+    uint8_t key_success = 0;
+
+    ChaChaPoly read_cipher;
+    uint8_t salt2[KEYMANAGER_HASHLEN];
+    uint8_t iv2[SYMMETRIC_IVLEN];
+    uint8_t key1[SYMMETRIC_KEYLEN];
+    uint8_t key2[SYMMETRIC_KEYLEN];
+
+    memset((void *)&fs->fth,'\000',sizeof(fs->fth));
+    randomness_get_whitened_bits(fs->fth.iv1, sizeof(fs->fth.iv1));
+    randomness_get_whitened_bits(fs->fth.salt1, sizeof(fs->fth.salt1));
+    randomness_get_whitened_bits(salt2, sizeof(salt2));
+    randomness_get_whitened_bits(iv2, sizeof(iv2));
+ 
+    if (keymanager_get_symmetric_key(secret, &secretlen))
     {
-      ChaChaPoly read_cipher;
-      uint8_t salt2[KEYMANAGER_HASHLEN];
-      uint8_t iv2[SYMMETRIC_IVLEN];
-      uint8_t key1[SYMMETRIC_KEYLEN];
-      uint8_t key2[SYMMETRIC_KEYLEN];
+       randomness_get_whitened_bits(fs->fth.ephemeral_public_key,sizeof(fs->fth.ephemeral_public_key));
+       key_success = 1;
+    }
+    else
+    {
+       uint8_t ephemeral_private_key[KEYMANAGER_PRIVATEKEY_LEN];
+       fileenc_secret_concatenation shared_secrets;
+       keymanager_create_ephemeral_key(fs->fth.ephemeral_public_key,sizeof(fs->fth.ephemeral_public_key),
+                                       ephemeral_private_key,sizeof(ephemeral_private_key));
+       key_success = keymanager_shared_secrets_with_public_key(
+          shared_secrets.shared_secret_ephemeral,shared_secrets.shared_secret_private,ephemeral_private_key);
+       ctblake2s(secret, secretlen, (const void *)&shared_secrets, sizeof(shared_secrets), NULL, 0);
+       memset((void *)&shared_secrets,'\000',sizeof(shared_secrets));
+       memset((void *)&ephemeral_private_key,'\000',sizeof(ephemeral_private_key));
+    }
 
-      memset((void *)&fs->fth,'\000',sizeof(fs->fth));
-      randomness_get_whitened_bits(fs->fth.iv1, sizeof(fs->fth.iv1));
-      randomness_get_whitened_bits(fs->fth.salt1, sizeof(fs->fth.salt1));
-      randomness_get_whitened_bits(salt2, sizeof(salt2));
-      randomness_get_whitened_bits(iv2, sizeof(iv2));
+    if (key_success)
+    {
       key_derivation_function((void *)key1, secret, secretlen, fs->fth.salt1, sizeof(fs->fth.salt1));
-
       fs->fth.fhpu.fhp.id   =         FILEENC_EXPORT_ID;
       fs->fth.fhpu.fhp.entry_type =   current_key_private.entry_type;
       fs->fth.fhpu.fhp.vers =         FILEENC_EXPORT_VERSION;
@@ -202,6 +222,7 @@ void fileenc_encrypt_state(fileenc_state *fs)
       
       file_write_block(&fs->write_file, "PARANOIABOX-ENDBLOCK", (void *)tag, sizeof(tag));      
     } else file_report_error("Bad secret key");
+    memset((void *)&secret,'\000',sizeof(secret));
   }  
   f_close(&fs->write_file);
   f_close(&fs->read_file);
@@ -317,15 +338,28 @@ void fileenc_decrypt_state(filedec_state *fs)
   console_puts("Decrypting file:\r\n");
   {
     uint8_t secret[KEYMANAGER_MAX_SECRET_LEN];
-    int secretlen;
-    if (keymanager_compute_secret(secret, &secretlen))
-    {
-      memset((void *)&fs->fth,'\000',sizeof(fs->fth));
+    int secretlen = sizeof(secret);
+    uint8_t key_success = 0;
+
+    memset((void *)&fs->fth,'\000',sizeof(fs->fth));
       
-      if(file_read_block(&fs->read_file, "PARANOIABOX-FILEHEADER", (void *)&fs->fth, sizeof(fs->fth)))
-      {
-        
-        uint8_t key1[SYMMETRIC_KEYLEN];
+    if(file_read_block(&fs->read_file, "PARANOIABOX-FILEHEADER", (void *)&fs->fth, sizeof(fs->fth)))
+    {
+      uint8_t key1[SYMMETRIC_KEYLEN];
+
+    if (keymanager_get_symmetric_key(secret, &secretlen))
+       key_success = 1;
+    else
+    {
+       fileenc_secret_concatenation shared_secrets;
+       key_success = keymanager_shared_secrets_with_private_key(
+          shared_secrets.shared_secret_ephemeral,shared_secrets.shared_secret_private,fs->fth.ephemeral_public_key);
+       ctblake2s(secret, secretlen, (const void *)&shared_secrets, sizeof(shared_secrets), NULL, 0);
+       memset((void *)&shared_secrets,'\000',sizeof(shared_secrets));
+    }
+    
+     if (key_success)
+     {
         key_derivation_function((void *)key1, secret, secretlen, fs->fth.salt1, sizeof(fs->fth.salt1));
         if (symmetric_memcrypt(0, (void *)key1, (void *)fs->fth.iv1, (void *)fs->fth.tag1, (void *)&fs->fth.fhpu, sizeof(fs->fth.fhpu)))
         {
@@ -368,6 +402,7 @@ void fileenc_decrypt_state(filedec_state *fs)
         } else file_report_error("Header Tag is invalid");
       } else file_report_error("Could not read file header");
     } else file_report_error("Bad secret key");
+    memset((void *)&secret,'\000',sizeof(secret));
   }
   f_lseek(&fs->write_file,destroy_output);
   f_truncate(&fs->write_file);

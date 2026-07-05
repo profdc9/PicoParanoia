@@ -45,20 +45,53 @@ key_entry current_key_public;
 static uint8_t passphrase_hash[KEYMANAGER_HASHLEN];
 static key_storage *ks = NULL;
 
-int keymanager_compute_secret(uint8_t *secret, int *secretlen)
+int keymanager_get_symmetric_key(uint8_t *secret, int *secretlen)
 {
-  uint8_t temp_private_key[KEYMANAGER_PUBLICKEY_LEN];
-  if (current_key_private.entry_type == KEY_TYPE_SYMMETRIC)
-  {
-    *secretlen = sizeof(current_key_private.ksu.sym.symmetric_key);
-    memcpy((void *)secret, (void *)current_key_private.ksu.sym.symmetric_key, sizeof(current_key_private.ksu.sym.symmetric_key));
-    return 1;
-  }
-  if ((current_key_private.entry_type != KEY_TYPE_ECDH_PRIVATE) && (current_key_public.entry_type != KEY_TYPE_ECDH_PUBLIC)) return 0;
-  *secretlen = sizeof(current_key_public.ksu.pub.public_key);
-  memcpy((void *)secret, (void *) &current_key_public.ksu.pub.public_key, sizeof(current_key_public.ksu.pub.public_key));
-  memcpy((void *)temp_private_key, (void *)current_key_private.ksu.priv.private_key, KEYMANAGER_PUBLICKEY_LEN);
-  return Curve25519::dh2(secret, temp_private_key);
+  if (current_key_private.entry_type != KEY_TYPE_SYMMETRIC)
+     return 0;
+  *secretlen = sizeof(current_key_private.ksu.sym.symmetric_key);
+  memcpy((void *)secret, (void *)current_key_private.ksu.sym.symmetric_key, sizeof(current_key_private.ksu.sym.symmetric_key));
+  return 1;  
+}
+
+void keymanager_create_ephemeral_key(uint8_t *public_key, size_t public_key_len, uint8_t *private_key, size_t private_key_len)
+{
+  Curve25519::dh1(public_key, private_key);
+}
+
+static int keymanager_is_public_key_mode(void)
+{
+  return ((current_key_private.entry_type == KEY_TYPE_ECDH_PRIVATE) && (current_key_public.entry_type == KEY_TYPE_ECDH_PUBLIC));
+}
+
+int keymanager_shared_secrets_with_public_key(uint8_t *shared_ephemeral, uint8_t *shared_private, uint8_t *ephemeral_private_key)
+{
+  uint8_t temp_private_key[KEYMANAGER_PRIVATEKEY_LEN];
+
+  if (!keymanager_is_public_key_mode()) return 0;
+
+  memcpy((void *)shared_ephemeral, (void *) &current_key_public.ksu.pub.public_key, sizeof(current_key_public.ksu.pub.public_key));
+  memcpy((void *)temp_private_key, (void *) ephemeral_private_key, KEYMANAGER_PRIVATEKEY_LEN);
+  if (!Curve25519::dh2(shared_ephemeral, temp_private_key)) return 0;
+
+  memcpy((void *)shared_private, (void *) &current_key_public.ksu.pub.public_key, sizeof(current_key_public.ksu.pub.public_key));
+  memcpy((void *)temp_private_key, (void *)current_key_private.ksu.priv.private_key, KEYMANAGER_PRIVATEKEY_LEN);
+  return Curve25519::dh2(shared_private, temp_private_key);
+}
+
+int keymanager_shared_secrets_with_private_key(uint8_t *shared_ephemeral, uint8_t *shared_private, uint8_t *ephemeral_public_key)
+{
+  uint8_t temp_private_key[KEYMANAGER_PRIVATEKEY_LEN];
+
+  if (!keymanager_is_public_key_mode()) return 0;
+
+  memcpy((void *)shared_ephemeral, (void *) ephemeral_public_key, KEYMANAGER_PUBLICKEY_LEN);
+  memcpy((void *)temp_private_key, (void *)current_key_private.ksu.priv.private_key, KEYMANAGER_PRIVATEKEY_LEN);
+  if (!Curve25519::dh2(shared_ephemeral, temp_private_key)) return 0;
+
+  memcpy((void *)shared_private, (void *) &current_key_public.ksu.pub.public_key, sizeof(current_key_public.ksu.pub.public_key));
+  memcpy((void *)temp_private_key, (void *)current_key_private.ksu.priv.private_key, KEYMANAGER_PRIVATEKEY_LEN);
+  return Curve25519::dh2(shared_private, temp_private_key);
 }
 
 void keymanager_initialize(void)
@@ -370,12 +403,6 @@ void keymanager_select_key(void)
       keymanager_export_public_key(key_no,ke);
     if (ch == 'I')
       keymanager_import_public_key(key_no,ke);
-    if (ch == 'Z')
-    {
-      uint8_t secret[32];
-      int secretlen;
-      keymanager_compute_secret(secret,&secretlen);
-    }
   }
 }
 

@@ -111,7 +111,10 @@ typedef struct _key_storage
 void keymanager(void);
 void keymanager_initialize(void);
 void keymanager_display_key(int entno, key_entry *ke);
-int keymanager_compute_secret(uint8_t *secret, int *secretlen);
+void keymanager_create_ephemeral_key(uint8_t *public_key, size_t public_key_len, uint8_t *private_key, size_t private_key_len);
+int keymanager_shared_secrets_with_public_key(uint8_t *shared_ephemeral, uint8_t *shared_private, uint8_t *ephemeral_private_key);
+int keymanager_shared_secrets_with_private_key(uint8_t *shared_ephemeral, uint8_t *shared_private, uint8_t *ephemeral_public_key);
+int keymanager_get_symmetric_key(uint8_t *secret, int *secretlen);
 
 extern key_entry current_key_private;
 extern key_entry current_key_public;
